@@ -44,9 +44,11 @@ async function api(action, body = {}) {
   const payload = { action, ...body };
   if (token) payload.token = token;
 
+  const url = API_BASE + (API_BASE.includes("?") ? "&" : "?") + "action=" + encodeURIComponent(action);
+  // Prefer POST with JSON for privacy of password
   const r = await fetch(API_BASE, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { "Content-Type": "text/plain;charset=utf-8" }, // avoid preflight issues with simple content-type
     body: JSON.stringify(payload),
     redirect: "follow"
   });

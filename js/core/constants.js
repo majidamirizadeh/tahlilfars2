@@ -1,6 +1,7 @@
 /* ثابت‌های مشترک — مسیرها نسبت به محل خود فایل‌ها محاسبه می‌شوند، نه Root سایت؛
    پس روی GitHub Pages (https://user.github.io/<repo>/) و هر زیرپوشه بدون تنظیم کار می‌کند. */
-export const APP_BASE = new URL("../../", import.meta.url).href;
+export const APP_BASE = "https://script.google.com/macros/s/AKfycby5MDvc5-yJ2XCU4lUiT29frPHi6uM-qWyHRqpBsDH2bHSa2yQt9P5wlqZso89dROkW/exec";
+  ("../../", import.meta.url).href;
 export const appUrl = rel => new URL(rel, APP_BASE).href;
 export const MANIFEST_URL = appUrl("data/manifest.json");
 export const DB_NAME = "dashboard-data", DB_VERSION = 1, DB_STORE = "datasets";

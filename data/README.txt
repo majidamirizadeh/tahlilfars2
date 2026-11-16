@@ -1,5 +1,4 @@
-فایل‌های اکسل واقعی (150.xlsx و 1520.xlsx) عمداً از این مخزن حذف شده‌اند.
-
-داده‌ها در Google Drive خصوصی نگهداری می‌شوند و از طریق Google Apps Script Backend به برنامه تحویل داده می‌شوند.
-
-هیچ فایل حاوی اطلاعات واقعی را به این ریپو اضافه نکنید.
+فایل Excel اصلی: 1520.xlsx
+برای به‌روزرسانی: فایل جدید را با همین نام جایگزین کنید، سپس  node tools/build-manifest.mjs  را اجرا کنید (یا GitHub Action را فعال بگذارید).
+manifest.json نسخه/hash فایل را نگه می‌دارد؛ نباید دستی ویرایش شود (جز allowCountChange).
+Datasetهای جدید: js/data/dataRegistry.js را ببینید.

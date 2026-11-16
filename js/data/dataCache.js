@@ -1,46 +1,16 @@
-/* IndexedDB cache for processed datasets */
-const DB_NAME = "dashboard-data", DB_VERSION = 1, DB_STORE = "datasets";
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(DB_STORE)) {
-        db.createObjectStore(DB_STORE, { keyPath: "datasetId" });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+/* Cache داده‌های پردازش‌شده در IndexedDB (نه LocalStorage). رکورد: {datasetId, version, hash, processorVersion, processedData, metadata, updatedAt}.
+   put اتمیک است؛ رکورد فقط وقتی جایگزین می‌شود که Dataset جدید کاملاً Validate شده باشد. */
+import {DB_NAME, DB_VERSION, DB_STORE} from "../core/constants.js";
+let dbPromise = null;
+function openDb(){
+  if(!("indexedDB" in globalThis)) return Promise.resolve(null);
+  return dbPromise ??= new Promise(res => { try{ const rq = indexedDB.open(DB_NAME, DB_VERSION);
+    rq.onupgradeneeded = () => { if(!rq.result.objectStoreNames.contains(DB_STORE)) rq.result.createObjectStore(DB_STORE, {keyPath: "datasetId"}); };
+    rq.onsuccess = () => res(rq.result); rq.onerror = rq.onblocked = () => res(null); }catch{ res(null); } });
 }
-
-export async function getDataset(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readonly");
-    const req = tx.objectStore(DB_STORE).get(id);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function putDataset(record) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    const req = tx.objectStore(DB_STORE).put(record);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
-
-export async function deleteDataset(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    const req = tx.objectStore(DB_STORE).delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-  });
-}
+const tx = (db, mode, fn) => new Promise(res => { try{ const t = db.transaction(DB_STORE, mode), rq = fn(t.objectStore(DB_STORE));
+  t.oncomplete = () => res(rq?.result ?? true); t.onerror = t.onabort = () => res(null); }catch{ res(null); } });
+export async function getDataset(id){ const db = await openDb(); return db ? (await tx(db, "readonly", s => s.get(id))) || null : null; }
+export async function putDataset(rec){ const db = await openDb(); return db ? !!(await tx(db, "readwrite", s => s.put({...rec, updatedAt: Date.now()}))) : false; }
+export async function deleteDataset(id){ const db = await openDb(); return db ? !!(await tx(db, "readwrite", s => s.delete(id))) : false; }
+export async function listDatasets(){ const db = await openDb(); return db ? (await tx(db, "readonly", s => s.getAll())) || [] : []; }
