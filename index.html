@@ -6,9 +6,12 @@
 <link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icons/icon-192.png" type="image/png"><link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="دفتر درآمد"><title>داشبورد مدیریتی دفتر درآمد</title>
 <link rel="stylesheet" href="./css/tokens.css"><link rel="stylesheet" href="./css/base.css"><link rel="stylesheet" href="./css/layout.css"><link rel="stylesheet" href="./css/components.css"><link rel="stylesheet" href="./css/views.css"><link rel="stylesheet" href="./css/trend.css"><link rel="stylesheet" href="./css/print.css">
+<!-- XLSX فقط داخل Web Worker بارگذاری می‌شود (با Cache معتبر اصلاً دانلود نمی‌شود). Chart.js در پروژه استفاده نمی‌شد و حذف شد.
+     Lucide: نسخهٔ محلی vendor/ (defer)؛ اگر نبود app.js خودکار از CDN می‌گیرد. -->
 <script defer src="./vendor/lucide/lucide.min.js"></script>
 </head>
 <body class="map-view">
+<!-- صفحه ورود (قبل از احراز هویت هیچ داشبوردی نمایش داده نمی‌شود) -->
 <div id="loginOverlay" class="login-overlay" hidden>
   <div class="login-card card">
     <div class="login-brand">
@@ -53,6 +56,7 @@
     <div class="source-mini">منبع <b id="sourceName">1520.xlsx</b></div>
   </section>
 
+  <!-- کنترل‌های فیلتر برای نمای نقشه/هوم: کاربری جلو، امور بعد -->
   <section id="mapFiltersBar" class="map-filters-bar card">
     <div class="filters-row filters-row-toggles">
       <button type="button" id="armedForcesBtn" class="cycle-btn armed-btn" data-state="without" title="نیروهای مسلح: بدون نیروی مسلح / فقط نیروی مسلح / با نیروی مسلح (با هر کلیک عوض می‌شود)">
@@ -103,6 +107,7 @@
     </div>
   </section>
 
+  <!-- تب‌های حالت برای نمای نقشه (آمار / سرانه / شاخص) -->
   <section id="mapModeTabs" class="map-mode-tabs-bar" aria-label="نوع گزارش">
     <button class="map-mode-tab active" data-mode="stats">آمارها</button>
     <button class="map-mode-tab" data-mode="percapita">سرانه‌ها</button>
@@ -110,6 +115,7 @@
     <button class="map-mode-tab" data-mode="ranking">رتبه‌بندی</button>
   </section>
 
+  <!-- زیرتب‌های «تحلیل» (مصرف / مالی) -->
   <section id="analysisTabs" class="map-mode-tabs-bar" aria-label="نوع تحلیل">
     <button class="map-mode-tab active" data-sub="anomaly">مصرف و ناهنجاری</button>
     <button class="map-mode-tab" data-sub="finance">مالی و عملکرد</button>
