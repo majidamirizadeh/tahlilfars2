@@ -1,6 +1,7 @@
 /* منوی همبرگری تنظیمات — به‌صورت خودکار از رجیستری settings.js ساخته می‌شود.
    هر تنظیم/هشدار/شاخص جدیدی که با registerSetting / registerThreshold / registerAlertRule ثبت شود، خودش اینجا ظاهر می‌شود. */
 import {schema, get, set, reset, resetAll, isModified, modifiedCount, onChange} from "./settings.js";
+import {isAdmin, getUser, listUsers, createUser, deleteUser} from "../auth/auth.js";
 
 const esc = s => String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 const faN = n => Number(n).toLocaleString("fa-IR");
@@ -24,6 +25,25 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
     return `<div class="st-item ${d.type==="list"?"st-item-list":""} ${isModified(d.id)?"modified":""}" data-st-item="${d.id}">${label}<div class="st-ctl">${ctl}<button type="button" class="st-reset" data-st-reset="${d.id}" title="بازگردانی به پیش‌فرض" aria-label="بازگردانی به پیش‌فرض">↺</button></div></div>`;
   }
 
+  function adminHtml(){
+    if(!isAdmin()) return "";
+    return `<details class="st-group adm-group" open>
+      <summary><span>مدیریت کاربران</span><em class="st-badge">مدیر</em></summary>
+      <div class="st-section adm-section">
+        <p class="st-note">ایجاد و حذف حساب‌های کاربری سامانه. دسترسی این بخش فقط برای مدیر فعال است.</p>
+        <form class="adm-create" data-adm-form>
+          <label>نام کاربری<input name="username" type="text" minlength="2" maxlength="60" autocomplete="off" required></label>
+          <label>رمز عبور اولیه<input name="password" type="password" minlength="4" autocomplete="new-password" required></label>
+          <label>نقش حساب<select name="role"><option value="user">کاربر عادی</option><option value="admin">مدیر</option></select></label>
+          <button type="submit" class="adm-primary">ایجاد کاربر</button>
+        </form>
+        <p class="adm-message" data-adm-message role="status" aria-live="polite"></p>
+        <div class="adm-list-head"><b>کاربران ثبت‌شده</b><button type="button" class="adm-refresh" data-adm-refresh>به‌روزرسانی فهرست</button></div>
+        <div class="adm-users" data-adm-users><p class="st-note">در حال دریافت فهرست کاربران…</p></div>
+      </div>
+    </details>`;
+  }
+
   function build(){
     defsById = new Map();
     const body = schema().map(({group,sections})=>{
@@ -38,7 +58,7 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
       <aside class="st-panel" role="dialog" aria-label="تنظیمات">
         <header><h2>تنظیمات آستانه‌ها و هشدارها</h2><button type="button" class="st-close" data-st="close" aria-label="بستن">×</button></header>
         <p class="st-intro">تغییرات بلافاصله در تب‌های تحلیل و خروجی اعمال و در همین مرورگر ذخیره می‌شوند.</p>
-        <div class="st-body">${body}</div>
+        <div class="st-body">${adminHtml()}${body}</div>
         <footer><span class="st-total"></span><button type="button" class="st-resetall" data-st="resetall">بازگردانی همه به پیش‌فرض</button></footer>
       </aside>`;
   }
@@ -75,13 +95,93 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
     root.innerHTML = build();
     keepOpen.forEach(id=>root.querySelector(`[data-st-group="${id}"]`)?.setAttribute("open",""));
     paint();
+    if(isAdmin()) loadAdminUsers();
     root.classList.add("open"); open = true; button.setAttribute("aria-expanded","true");
     document.body.classList.add("settings-open");
   }
   function hide(){ if(!root) return; root.classList.remove("open"); open = false; button.setAttribute("aria-expanded","false"); document.body.classList.remove("settings-open"); }
 
   let timer = null;
+  function adminMessage(message, kind="ok"){
+    const el=root?.querySelector("[data-adm-message]");
+    if(!el) return;
+    el.textContent=message;
+    el.dataset.kind=kind;
+  }
+  function renderAdminUsers(users){
+    const target=root?.querySelector("[data-adm-users]");
+    if(!target) return;
+    const me=getUser()?.username;
+    if(!Array.isArray(users) || !users.length){
+      target.innerHTML='<p class="st-note">کاربری ثبت نشده است.</p>';
+      return;
+    }
+    target.innerHTML=`<div class="adm-user-list">${users.map(u=>{
+      const self=u.username===me;
+      const role=u.role==="admin"?"مدیر":"کاربر";
+      const created=u.created?new Date(u.created).toLocaleDateString("fa-IR"):"—";
+      const protectedUser=u.username==="00"||self;
+      return `<div class="adm-user-row">
+        <div class="adm-user-info"><b dir="auto">${esc(u.username)}</b><span>${role} · ${u.active?"فعال":"غیرفعال"} · ${created}</span></div>
+        ${protectedUser?'<span class="adm-protected">غیرقابل حذف</span>':`<button type="button" class="adm-delete" data-adm-delete="${esc(u.username)}">حذف</button>`}
+      </div>`;
+    }).join("")}</div>`;
+  }
+  async function loadAdminUsers(){
+    const target=root?.querySelector("[data-adm-users]");
+    if(!target||!isAdmin()) return;
+    target.innerHTML='<p class="st-note">در حال دریافت فهرست کاربران…</p>';
+    try{
+      const data=await listUsers();
+      renderAdminUsers(data.users||[]);
+    }catch(err){
+      target.innerHTML='<p class="adm-error">دریافت فهرست کاربران ناموفق بود.</p>';
+      adminMessage(err.message||"خطا در دریافت کاربران","err");
+    }
+  }
+
   function bind(){
+    root.addEventListener("submit", async e=>{
+      const form=e.target.closest("[data-adm-form]");
+      if(!form) return;
+      e.preventDefault();
+      if(!isAdmin()){ adminMessage("دسترسی غیرمجاز","err"); return; }
+      const fd=new FormData(form);
+      const username=String(fd.get("username")||"").trim();
+      const password=String(fd.get("password")||"");
+      const role=String(fd.get("role")||"user");
+      const submit=form.querySelector('button[type="submit"]');
+      submit.disabled=true;
+      adminMessage("در حال ایجاد کاربر…");
+      try{
+        await createUser(username,password,role);
+        form.reset();
+        adminMessage("کاربر «"+username+"» با موفقیت ایجاد شد.","ok");
+        await loadAdminUsers();
+      }catch(err){
+        adminMessage(err.message||"ایجاد کاربر انجام نشد.","err");
+      }finally{ submit.disabled=false; }
+    });
+    root.addEventListener("click", async e=>{
+      const del=e.target.closest("[data-adm-delete]");
+      if(del){
+        const username=del.dataset.admDelete;
+        if(!isAdmin()||!username) return;
+        if(!confirm("کاربر «"+username+"» حذف شود؟ این عملیات قابل بازگشت نیست.")) return;
+        del.disabled=true;
+        adminMessage("در حال حذف کاربر…");
+        try{
+          await deleteUser(username);
+          adminMessage("کاربر «"+username+"» حذف شد.","ok");
+          await loadAdminUsers();
+        }catch(err){
+          adminMessage(err.message||"حذف کاربر انجام نشد.","err");
+          del.disabled=false;
+        }
+        return;
+      }
+      if(e.target.closest("[data-adm-refresh]")){ loadAdminUsers(); return; }
+    });
     root.addEventListener("click", e=>{
       /* جلوگیری از بسته/باز شدن تصادفی details وقتی روی کنترل کلیک می‌شود */
       if(e.target.closest("[data-st-input], .st-ctl, .rp-switch, .st-chip, .st-reset, .st-num")) e.stopPropagation();
