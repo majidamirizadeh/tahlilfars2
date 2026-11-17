@@ -654,6 +654,22 @@ function showLogin() {
   const errEl = document.getElementById("loginError");
   const btn = document.getElementById("loginBtn");
   if (!form) return;
+  // چشم نمایش/مخفی رمز
+  const passInput = document.getElementById("loginPass");
+  const passToggle = document.getElementById("loginPassToggle");
+  if (passToggle && passInput) {
+    passToggle.onclick = () => {
+      const show = passInput.type === "password";
+      passInput.type = show ? "text" : "password";
+      const icon = document.getElementById("loginPassIcon");
+      if (icon) {
+        icon.setAttribute("data-lucide", show ? "eye-off" : "eye");
+        if (window.lucide) lucide.createIcons({ nodes: [icon] });
+      }
+      passToggle.setAttribute("aria-label", show ? "مخفی کردن رمز" : "نمایش رمز");
+    };
+  }
+  if (window.lucide) lucide.createIcons();
   form.onsubmit = async (ev) => {
     ev.preventDefault();
     errEl.hidden = true;
