@@ -518,6 +518,27 @@ label.an-check,.an-table-tools label,.fin-tools label,.an-filters label{display:
   box-sizing: border-box;
 }
 .login-field input:focus { outline: 2px solid var(--accent, #c9a227); border-color: transparent; }
+.login-pass-wrap { position: relative; display: flex; align-items: center; }
+.login-pass-wrap input { padding-left: 2.75rem; }
+.login-pass-toggle {
+  position: absolute;
+  left: .5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted, #777);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0;
+}
+.login-pass-toggle:hover { color: var(--text, #1a1a1a); background: rgba(0,0,0,.05); }
+.login-pass-toggle svg { width: 1.15rem; height: 1.15rem; }
 .login-error {
   color: #b91c1c;
   background: #fef2f2;
@@ -547,3 +568,5 @@ label.an-check,.an-table-tools label,.fin-tools label,.an-filters label{display:
   color: var(--muted, #777);
   line-height: 1.5;
 }
+.login-hint a { color: var(--accent, #b8860b); text-decoration: none; font-weight: 600; }
+.login-hint a:hover { text-decoration: underline; }
