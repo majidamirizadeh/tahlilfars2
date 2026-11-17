@@ -454,7 +454,7 @@ label.an-check,.an-table-tools label,.fin-tools label,.an-filters label{display:
 .adm-user-info{display:grid;gap:3px;min-width:0}
 .adm-user-info b{overflow-wrap:anywhere;font-size:var(--fs-300)}
 .adm-user-info span,.adm-protected{font-size:var(--fs-100);color:var(--ink-3)}
-.adm-delete{flex-shrink:0;background:var(--crit-bg);border-color:var(--crit-line);color:var(--crit);font-size:var(--fs-200)}
+.adm-actions{display:flex;gap:5px;flex-shrink:0}.adm-delete{background:var(--crit-bg);border-color:var(--crit-line);color:var(--crit);font-size:var(--fs-200)}.adm-resetpass{border:1px solid var(--line-2);border-radius:var(--r-ctl);padding:.55rem .65rem;background:var(--panel-2);color:var(--ink-2);font:inherit;font-size:var(--fs-200);cursor:pointer}.adm-resetpass:disabled{opacity:.55;cursor:wait}
 .adm-protected{white-space:nowrap}
 .adm-message{min-height:1.4em;margin:0;font-size:var(--fs-200);color:var(--good)}
 .adm-message[data-kind="err"],.adm-error{color:var(--crit)}
