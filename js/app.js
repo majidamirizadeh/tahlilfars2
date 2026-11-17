@@ -244,9 +244,13 @@ function fillUsageDropdown(){
   });
 }
 
-/* تب‌های اصلی آمارها/سرانه‌ها/شاخص‌ها (فقط صفحه هوم؛ در تب تحلیل این نوار مخفی است) */
+/* تب‌های آمارها/سرانه‌ها/شاخص‌ها/رتبه‌بندی (تب «دفتر درآمد»؛ در مصرف/مالی/روند/پرینت مخفی است) */
 function syncModeTabs(){
-  $$('#mapModeTabs .map-mode-tab').forEach(x=>x.classList.toggle('active',x.dataset.mode===state.mode));
+  /* «رتبه‌بندی» (نمای analytics) چهارمین تب همین نوار است؛ در آن نما سه تب دیگر غیرفعال‌اند */
+  const cur=state.view==="analytics"?"ranking":state.mode;
+  $$('#mapModeTabs .map-mode-tab').forEach(x=>x.classList.toggle('active',x.dataset.mode===cur));
+  /* زیرتب‌های «تحلیل»: مصرف و ناهنجاری / مالی و عملکرد */
+  $$('#analysisTabs .map-mode-tab').forEach(x=>x.classList.toggle('active',x.dataset.sub===state.view));
 }
 
 function activeAreas(){
@@ -383,9 +387,13 @@ function renderHomeView(){
   if(window.lucide)lucide.createIcons();
 }
 
+/* گروه نوار ناوبری: «تحلیل» = مصرف+مالی · «دفتر درآمد» = نقشه/آمار + رتبه‌بندی · روند · پرینت (گزارش) */
+const VIEW_GROUP={home:"home",analytics:"home",anomaly:"analysis",finance:"analysis",trend:"trend",report:"report"};
+const lastInGroup={home:"home",analysis:"anomaly",trend:"trend",report:"report"};   // آخرین زیرتب هر گروه؛ با بازگشت به گروه همان باز می‌شود
 function setView(view){
   state.view=view;
-  $$('.ribbon-item').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
+  lastInGroup[VIEW_GROUP[view]]=view;
+  $$('.ribbon-item').forEach(x=>x.classList.toggle('active',x.dataset.group===VIEW_GROUP[view]));
   document.body.classList.toggle("map-view",view==="home");
   document.body.classList.toggle("analytics-view",view==="analytics");
   document.body.classList.toggle("anomaly-view",view==="anomaly");
@@ -479,11 +487,18 @@ async function boot(){
 // Mode tabs (فقط صفحه هوم؛ در تب تحلیل مخفی است)
 $$('#mapModeTabs .map-mode-tab').forEach(b=>{
   b.addEventListener('click',()=>{
-    state.mode=b.dataset.mode;
+    const m=b.dataset.mode;
+    if(m==="ranking"){ if(state.view!=="analytics") setView("analytics"); return; }
+    state.mode=m;
+    if(state.view!=="home"){ setView("home"); return; }   // از «رتبه‌بندی» به نقشه/آمار برمی‌گردد
     syncModeTabs();
     ensureMapMetric();
     rerenderHome();
   });
+});
+// زیرتب‌های «تحلیل»
+$$('#analysisTabs .map-mode-tab').forEach(b=>{
+  b.addEventListener('click',()=>{ if(state.view!==b.dataset.sub) setView(b.dataset.sub); });
 });
 
 // Dropdown toggles — با موقعیت‌دهی پویا (fixed) تا همیشه روی صفحه و کامل دیده شود، بدون افتادن پشت چیز دیگری و بدون نیاز به اسکرول جداگانه
@@ -599,8 +614,9 @@ $("#refreshBtn").addEventListener("click",()=>{ if(state.view==="trend") return 
 $$('.ribbon-item').forEach(b=>{
   b.addEventListener('click',()=>{
     if(b.disabled)return;
-    const v=b.dataset.view;
-    if(v==="home"||v==="analytics"||v==="anomaly"||v==="finance"||v==="report"||v==="trend") setView(v);
+    const g=b.dataset.group;
+    if(VIEW_GROUP[state.view]===g) return;                 // همین گروه فعال است؛ زیرتب فعلی حفظ می‌شود
+    setView(lastInGroup[g]||b.dataset.view);
   });
 });
 
@@ -612,7 +628,7 @@ window.addEventListener("map-metric-change",e=>{
 window.addEventListener("map-mode-change",e=>{
   if(state.view!=="home")return;
   state.mode=e.detail.mode;
-  $$('#mapModeTabs .map-mode-tab').forEach(x=>x.classList.toggle('active',x.dataset.mode===state.mode));
+  syncModeTabs();
   ensureMapMetric();
   rerenderHome();
 });

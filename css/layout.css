@@ -55,7 +55,7 @@
   .bottom-ribbon{
     inset-inline:0;bottom:0;
     height:calc(var(--nav-h) + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);
-    display:grid;grid-template-columns:repeat(6,minmax(0,1fr));
+    display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
     border-top:1px solid var(--line);
   }
   .ribbon-item{flex-direction:column;gap:.3rem;min-height:3.25rem;font-size:var(--fs-100);padding:var(--s-2) 0 var(--s-1)}
@@ -75,11 +75,15 @@
 
 /* ── نماها: هر تب فقط اجزای خودش را نشان می‌دهد ── */
 #mapContainer.hidden{display:none}
-body.analytics-view #mapContainer,body.analytics-view #mapModeTabs,
+body.analytics-view #mapContainer,
 body.report-view #mapContainer,body.report-view #mapModeTabs,
 body.trend-view #mapContainer,body.trend-view #mapModeTabs,body.trend-view #mapFiltersBar,
 body.anomaly-view #mapContainer,body.anomaly-view #mapModeTabs,body.anomaly-view #mapFiltersBar,
 body.finance-view #mapContainer,body.finance-view #mapModeTabs,body.finance-view #mapFiltersBar{display:none}
+/* زیرتب‌های «تحلیل» فقط در نمای مصرف/مالی دیده می‌شوند */
+#analysisTabs{display:none}
+body.anomaly-view #analysisTabs,body.finance-view #analysisTabs{display:flex}
+body.report-view #analysisTabs,body.trend-view #analysisTabs{display:none}
 
 /* ── شبکهٔ صفحهٔ دفتر درآمد: نقشه کنار دفتر ردیف‌ها (دسکتاپ) ── */
 @media (min-width:1100px){

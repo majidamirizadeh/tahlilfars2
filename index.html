@@ -107,6 +107,13 @@
     <button class="map-mode-tab active" data-mode="stats">آمارها</button>
     <button class="map-mode-tab" data-mode="percapita">سرانه‌ها</button>
     <button class="map-mode-tab" data-mode="indices">شاخص‌ها</button>
+    <button class="map-mode-tab" data-mode="ranking">رتبه‌بندی</button>
+  </section>
+
+  <!-- زیرتب‌های «تحلیل» (مصرف / مالی) -->
+  <section id="analysisTabs" class="map-mode-tabs-bar" aria-label="نوع تحلیل">
+    <button class="map-mode-tab active" data-sub="anomaly">مصرف و ناهنجاری</button>
+    <button class="map-mode-tab" data-sub="finance">مالی و عملکرد</button>
   </section>
 
   <div id="mapContainer"></div>
@@ -115,12 +122,10 @@
 </main>
 
 <nav class="bottom-ribbon" aria-label="ناوبری">
-  <button class="ribbon-item side" data-view="anomaly" title="تحلیل مصرف و ناهنجاری"><i data-lucide="radar"></i><span>مصرف</span></button>
-  <button class="ribbon-item side" data-view="finance" title="تحلیل مالی و عملکردی"><i data-lucide="wallet"></i><span>مالی</span></button>
-  <button class="ribbon-item home active" data-view="home"><i data-lucide="home"></i><span>دفتردرآمد</span></button>
-  <button class="ribbon-item side" data-view="trend" title="روند، مقایسه و پیش‌بینی"><i data-lucide="trending-up"></i><span>روند</span></button>
-  <button class="ribbon-item side" data-view="analytics" title="رتبه‌بندی و هشدارها"><i data-lucide="activity"></i><span>رتبه</span></button>
-  <button class="ribbon-item side" data-view="report" title="گزارش چاپ / PDF"><i data-lucide="printer"></i><span>گزارش</span></button>
+  <button class="ribbon-item side" data-view="anomaly" data-group="analysis" title="تحلیل مصرف و مالی"><i data-lucide="radar"></i><span>تحلیل</span></button>
+  <button class="ribbon-item home active" data-view="home" data-group="home" title="نقشه، آمار، رتبه‌بندی و هشدارها"><i data-lucide="home"></i><span>دفتر درآمد</span></button>
+  <button class="ribbon-item side" data-view="trend" data-group="trend" title="روند، مقایسه و پیش‌بینی"><i data-lucide="trending-up"></i><span>روند</span></button>
+  <button class="ribbon-item side" data-view="report" data-group="report" title="گزارش چاپ / PDF"><i data-lucide="printer"></i><span>پرینت</span></button>
   <div class="ribbon-help">راهنما</div>
 </nav>
 </div>
