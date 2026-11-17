@@ -1,7 +1,7 @@
 /* منوی همبرگری تنظیمات — به‌صورت خودکار از رجیستری settings.js ساخته می‌شود.
    هر تنظیم/هشدار/شاخص جدیدی که با registerSetting / registerThreshold / registerAlertRule ثبت شود، خودش اینجا ظاهر می‌شود. */
 import {schema, get, set, reset, resetAll, isModified, modifiedCount, onChange} from "./settings.js";
-import {isAdmin, getUser, listUsers, createUser, deleteUser} from "../auth/auth.js";
+import {isAdmin, getUser, listUsers, createUser, changePassword, deleteUser} from "../auth/auth.js";
 
 const esc = s => String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 const faN = n => Number(n).toLocaleString("fa-IR");
@@ -123,7 +123,7 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
       const protectedUser=u.username==="00"||self;
       return `<div class="adm-user-row">
         <div class="adm-user-info"><b dir="auto">${esc(u.username)}</b><span>${role} · ${u.active?"فعال":"غیرفعال"} · ${created}</span></div>
-        ${protectedUser?'<span class="adm-protected">غیرقابل حذف</span>':`<button type="button" class="adm-delete" data-adm-delete="${esc(u.username)}">حذف</button>`}
+        ${protectedUser?'<span class="adm-protected">حساب جاری</span>':`<div class="adm-actions"><button type="button" class="adm-resetpass" data-adm-pass="${esc(u.username)}">تغییر رمز</button><button type="button" class="adm-delete" data-adm-delete="${esc(u.username)}">حذف</button></div>`}
       </div>`;
     }).join("")}</div>`;
   }
@@ -163,6 +163,22 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
       }finally{ submit.disabled=false; }
     });
     root.addEventListener("click", async e=>{
+      const pass=e.target.closest("[data-adm-pass]");
+      if(pass){
+        const username=pass.dataset.admPass;
+        if(!isAdmin()||!username) return;
+        const password=prompt("رمز عبور جدید برای «"+username+"» (حداقل ۴ کاراکتر):");
+        if(password===null) return;
+        if(password.length<4){ adminMessage("رمز عبور باید حداقل ۴ کاراکتر باشد.","err"); return; }
+        pass.disabled=true;
+        try{
+          await changePassword(username,password);
+          adminMessage("رمز عبور «"+username+"» تغییر کرد.","ok");
+        }catch(err){
+          adminMessage(err.message||"تغییر رمز انجام نشد.","err");
+        }finally{ pass.disabled=false; }
+        return;
+      }
       const del=e.target.closest("[data-adm-delete]");
       if(del){
         const username=del.dataset.admDelete;
