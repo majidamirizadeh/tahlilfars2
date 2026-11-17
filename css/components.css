@@ -437,6 +437,30 @@ label.an-check,.an-table-tools label,.fin-tools label,.an-filters label{display:
   .st-item{flex-wrap:wrap}
 }
 
+
+/* مدیریت کاربران — فقط در پنل مدیر */
+.adm-section{padding-top:var(--s-3)}
+.adm-create{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-2);margin:var(--s-2) 0 var(--s-3)}
+.adm-create label{display:grid;gap:5px;font-size:var(--fs-200);color:var(--ink-2)}
+.adm-create label:nth-child(3){grid-column:1/-1}
+.adm-create input,.adm-create select{width:100%;min-width:0;padding:.6rem .7rem;border:1px solid var(--line-2);border-radius:var(--r-ctl);background:var(--paper);color:var(--ink);font:inherit}
+.adm-primary,.adm-refresh,.adm-delete{border:1px solid var(--line-2);border-radius:var(--r-ctl);padding:.55rem .8rem;font:inherit;cursor:pointer}
+.adm-primary{grid-column:1/-1;background:var(--accent);color:white;border-color:var(--accent);font-weight:var(--fw-bold)}
+.adm-primary:disabled,.adm-delete:disabled{opacity:.55;cursor:wait}
+.adm-list-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s-2);margin:var(--s-3) 0 var(--s-2);font-size:var(--fs-300)}
+.adm-refresh{font-size:var(--fs-100);background:var(--panel-2);color:var(--ink-2)}
+.adm-user-list{display:grid;gap:6px}
+.adm-user-row{display:flex;align-items:center;justify-content:space-between;gap:var(--s-2);padding:.65rem .7rem;border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--panel)}
+.adm-user-info{display:grid;gap:3px;min-width:0}
+.adm-user-info b{overflow-wrap:anywhere;font-size:var(--fs-300)}
+.adm-user-info span,.adm-protected{font-size:var(--fs-100);color:var(--ink-3)}
+.adm-delete{flex-shrink:0;background:var(--crit-bg);border-color:var(--crit-line);color:var(--crit);font-size:var(--fs-200)}
+.adm-protected{white-space:nowrap}
+.adm-message{min-height:1.4em;margin:0;font-size:var(--fs-200);color:var(--good)}
+.adm-message[data-kind="err"],.adm-error{color:var(--crit)}
+.adm-error{font-size:var(--fs-200);padding:.5rem}
+@media(max-width:420px){.adm-create{grid-template-columns:1fr}.adm-create label:nth-child(3),.adm-primary{grid-column:auto}}
+
 /* ═══ اعلان، حالت‌های خالی/بارگذاری، راهنمای شناور نقشه ═══ */
 .app-toast{
   position:fixed;top:calc(var(--topbar-h) + var(--s-2));left:50%;transform:translate(-50%,-8px);z-index:var(--z-toast);width:max-content;max-width:min(92vw,35rem);
