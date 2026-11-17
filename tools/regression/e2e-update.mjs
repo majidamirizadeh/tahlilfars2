@@ -1,6 +1,6 @@
 /* سناریوهای Update / Cache / Worker / Lazy Loading روی Chromium واقعی: node e2e-update.mjs <projectRoot> */
 import fs from "node:fs"; import {createRequire} from "node:module"; const {chromium} = createRequire(import.meta.url)("playwright");
-import {startServer, manifestFor, sha} from "./e2e-lib.mjs";
+import {startServer, manifestFor, sha, openView} from "./e2e-lib.mjs";
 const root = process.argv[2], raw1 = JSON.parse(fs.readFileSync(new URL("./raw-1520.json", import.meta.url), "utf8"));
 const clone = o => JSON.parse(JSON.stringify(o)), buf = o => Buffer.from(JSON.stringify(o));
 const V1 = buf(raw1);
@@ -42,12 +42,12 @@ console.log("S1b کلیک «به‌روزرسانی» وقتی تغییری نی
 ok(getCount(/^\/data\/1520\.xlsx/) === 0, "Excel دوباره دانلود نشد (HEAD=" + srv.log.filter(l => l.method === "HEAD").length + ")");
 
 console.log("S2  Dataset تغییر کرده");
-await page.click(".ribbon-item[data-view=finance]"); await page.waitForTimeout(1200); const finV1 = await page.innerText("#viewContainer");
+await openView(page, "finance"); await page.waitForTimeout(1200); const finV1 = await page.innerText("#viewContainer");
 setData(V2); workers = 0; srv.resetLog(); await clickUpdate(page); await toast(page, "داده جدید");
 ok(getCount(/^\/data\/1520\.xlsx/) >= 1 && workers >= 1, "دانلود جدید + پردازش در Worker");
 ok((await txt(page, "#yearDays")).includes("۲۰۲") && (await txt(page, "#periodTo")).includes("1405/07/16"), "Header: تاریخ پایان و روز سپری‌شده از سال → ۲۰۲");
 await page.waitForTimeout(1200); ok(finV1 !== await page.innerText("#viewContainer"), "تب مالی (دارای Memoize) داده قدیمی نشان نمی‌دهد");
-await page.click(".ribbon-item[data-view=home]"); await page.waitForTimeout(600);
+await openView(page, "home"); await page.waitForTimeout(600);
 const homeV2 = await txt(page, "#mapContainer"); ok(homeV2 !== homeV1, "ارقام داشبورد عوض شد");
 rec = await idb(page); ok(rec[0].hash === sha(V2) && rec.length === 1, "IndexedDB فقط نسخهٔ جدید را نگه می‌دارد");
 
@@ -79,9 +79,9 @@ console.log("S6  Lazy Loading (کاربر تازه)"); setData(V1);
 const ctx2 = await browser.newContext({serviceWorkers: "block", viewport: {width: 1100, height: 800}}), p2 = await mk(ctx2);
 srv.resetLog(); await p2.goto(srv.url + "/index.html"); await loaded(p2);
 ok(srv.count(/dashboards\/(analytics|anomaly|finance|report)\.js|engines\/anomalyEngine\.js/) === 0, "هنگام شروع، داشبوردهای سنگین Load نشدند");
-for (const v of ["analytics", "finance", "anomaly", "report"]) { await p2.click(`.ribbon-item[data-view="${v}"]`); await p2.waitForTimeout(900);
+for (const v of ["analytics", "finance", "anomaly", "report"]) { await openView(p2, v); await p2.waitForTimeout(900);
   ok(srv.count(new RegExp(`dashboards/${v}\\.js`)) === 1 && (await p2.innerText("#viewContainer")).length > 200, `تب ${v}: هنگام ورود Load و رندر شد`); }
-await p2.click(".ribbon-item[data-view=home]"); await p2.waitForTimeout(500); await p2.click("#menuBtn"); await p2.waitForSelector(".st-group");
+await openView(p2, "home"); await p2.waitForTimeout(500); await p2.click("#menuBtn"); await p2.waitForSelector(".st-group");
 const groups = await p2.$$eval(".st-group > summary span", e => e.length); ok(groups >= 5, "منوی تنظیمات همهٔ گروه‌ها را دارد (" + groups + ")");
 console.log("S7  fallback: مرورگر بدون Worker");
 const ctx3 = await browser.newContext({serviceWorkers: "block"}); await ctx3.addInitScript(() => { window.Worker = undefined; }); const p3 = await mk(ctx3); srv.resetLog();

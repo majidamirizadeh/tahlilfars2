@@ -1,6 +1,6 @@
 /* تست PWA / Service Worker:  node e2e-pwa.mjs <projectRoot> */
 import fs from "node:fs"; import {createRequire} from "node:module"; const {chromium} = createRequire(import.meta.url)("playwright");
-import {startServer, manifestFor} from "./e2e-lib.mjs";
+import {startServer, manifestFor, openView} from "./e2e-lib.mjs";
 const root = process.argv[2], raw = fs.readFileSync(new URL("./raw-1520.json", import.meta.url));
 let pass = 0, fail = 0; const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? "  ✓ " : "  ✗ ") + m); };
 const srv = await startServer(root); srv.overrides.set("/data/1520.xlsx", {body: raw}); srv.overrides.set("/data/manifest.json", {body: manifestFor({main: {file: "./1520.xlsx", body: raw, version: "t"}})});
@@ -27,7 +27,7 @@ await ctx.setOffline(true); srv.resetLog();
 await page.reload(); await ready();
 ok(await page.innerText("#mapContainer") === online, "آفلاین: برنامه بالا آمد و خروجی با حالت آنلاین یکسان است");
 ok((await page.innerText("#yearDays")).includes("۱۹۵"), "آفلاین: روز سپری‌شده از سال درست است (داده از IndexedDB)");
-for (const v of ["finance", "anomaly", "report", "analytics"]) { await page.click(`.ribbon-item[data-view=${v}]`); await page.waitForTimeout(700); ok((await page.innerText("#viewContainer")).length > 200, `آفلاین: تب ${v} (ماژول Lazy از Cache) رندر شد`); }
+for (const v of ["finance", "anomaly", "report", "analytics"]) { await openView(page, v); await page.waitForTimeout(700); ok((await page.innerText("#viewContainer")).length > 200, `آفلاین: تب ${v} (ماژول Lazy از Cache) رندر شد`); }
 await ctx.setOffline(false);
 
 console.log("P3  کد تازه و داده تازه (Cache قدیمی نمی‌ماند)");

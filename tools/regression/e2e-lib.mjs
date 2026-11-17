@@ -25,3 +25,11 @@ export async function startServer(root, {shims = true} = {}) {
     count: re => log.filter(l => re.test(l.path)).length};
 }
 export const manifestFor = files => { const datasets = {}; for (const [id, f] of Object.entries(files)) datasets[id] = {file: f.file, version: f.version, hash: sha(f.body), size: f.body.length}; return JSON.stringify({version: "test", datasets}); };
+/* باز کردن یک نما در ناوبری ادغام‌شده (تحلیل = مصرف+مالی · دفتر درآمد = نقشه/آمار + رتبه‌بندی)؛ روی ساختار قدیمی (تب‌های جدا) هم کار می‌کند */
+export async function openView(page, view) {
+  if (!(await page.$("#analysisTabs"))) return page.click(`.ribbon-item[data-view="${view}"]`);
+  if (view === "anomaly" || view === "finance") { await page.click(".ribbon-item[data-group=analysis]"); return page.click(`#analysisTabs [data-sub="${view}"]`); }
+  if (view === "analytics") { await page.click(".ribbon-item[data-group=home]"); return page.click('#mapModeTabs .map-mode-tab[data-mode="ranking"]'); }
+  await page.click(`.ribbon-item[data-view="${view}"]`);
+  if (view === "home" && (await page.evaluate(() => document.body.classList.contains("analytics-view")))) await page.click('#mapModeTabs .map-mode-tab[data-mode="stats"]');
+}
