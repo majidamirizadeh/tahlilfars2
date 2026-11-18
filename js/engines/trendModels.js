@@ -72,9 +72,20 @@ function arimaCore(y){
   return best;
 }
 
+/** محدود کردن شیب روند نسبت به سطح اخیر تا پیش‌بینی‌های انفجاری (مخصوصاً روی کاربری‌های کم‌داده) رخ ندهد */
+function dampSlope(level, b, h){
+  const L = Math.max(Math.abs(level), 1e-9);
+  /* حداکثر ±۸٪ رشد/افت ماهانه نسبت به سطح اخیر؛ برای افق بلند کمی سخت‌گیرانه‌تر */
+  const cap = L * 0.08 * Math.max(0.4, 1 - (h - 1) * 0.03);
+  return Math.max(-cap, Math.min(cap, b));
+}
 export const METHODS = {
   linear:{t:"روند خطی (رگرسیون OLS)", en:"Linear Trend", min:() => 3,
-    run:(y, h) => { const f = ols(y); return rng(h).map(i => f.a + f.b*(y.length + i)); }},
+    run:(y, h) => {
+      const f = ols(y), lvl = y[y.length - 1] ?? mean(y);
+      const b = dampSlope(lvl, f.b, h);
+      return rng(h).map(i => f.a + b*(y.length + i));
+    }},
   ma:{t:"میانگین متحرک", en:"Moving Average", min:() => 2,
     run:(y, h) => { const k = Math.min(Math.max(2, S("trend.maWindow")), y.length), m = mean(y.slice(-k)); return rng(h).map(() => m); }},
   wma:{t:"میانگین متحرک وزنی", en:"Weighted Moving Average", min:() => 2,
@@ -82,13 +93,22 @@ export const METHODS = {
   ses:{t:"هموارسازی نمایی ساده", en:"Simple Exponential Smoothing", min:() => 3,
     run:(y, h) => { const f = sesCore(y); return rng(h).map(() => f.l); }},
   holt:{t:"هولت (روند خطی)", en:"Holt's Linear Trend", min:() => 4,
-    run:(y, h) => { const f = holtCore(y, 1); return rng(h).map(i => f.l + (i + 1)*f.b); }},
+    run:(y, h) => {
+      const f = holtCore(y, 1), b = dampSlope(f.l, f.b, h);
+      return rng(h).map(i => f.l + (i + 1)*b);
+    }},
   dholt:{t:"هولت با روند میرا", en:"Damped Holt", min:() => 4,
-    run:(y, h) => { const phi = .9, f = holtCore(y, phi); return rng(h).map(i => { let s = 0; for(let k = 1; k <= i + 1; k++) s += Math.pow(phi, k); return f.l + s*f.b; }); }},
+    run:(y, h) => {
+      const phi = .9, f = holtCore(y, phi), b = dampSlope(f.l, f.b, h);
+      return rng(h).map(i => { let s = 0; for(let k = 1; k <= i + 1; k++) s += Math.pow(phi, k); return f.l + s*b; });
+    }},
   snaive:{t:"فصلی ساده", en:"Seasonal Naive", min:() => SEASON,
     run:(y, h) => { const n = y.length; return rng(h).map(i => y[n - SEASON + (i % SEASON)]); }},
   hw:{t:"هولت-وینترز (جمعی)", en:"Holt-Winters (Additive)", min:() => Math.max(2*SEASON, S("trend.seasonalMin")),
-    run:(y, h) => { const f = hwCore(y), n = y.length; return rng(h).map(i => f.l + (i + 1)*f.b + f.s[(n + i) % SEASON]); }},
+    run:(y, h) => {
+      const f = hwCore(y), n = y.length, b = dampSlope(f.l, f.b, h);
+      return rng(h).map(i => f.l + (i + 1)*b + f.s[(n + i) % SEASON]);
+    }},
   arima:{t:"ARIMA(p,d,0) با عرض از مبدأ", en:"ARIMA", min:() => Math.max(10, S("trend.arimaMin")),
     run:(y, h) => {
       const f = arimaCore(y); if(!f) throw new Error("ARIMA برازش نشد");
@@ -135,17 +155,30 @@ export const zOf = Z;
 const stdCands = () => { const o = {}; for(const id of METHOD_IDS) o[id] = {run:METHODS[id].run, min:METHODS[id].min()}; return o; };
 
 /** پیش‌بینی یک سری: method = "auto" یا شناسهٔ مدل. خروجی شامل بازهٔ پیش‌بینی (σ از خطاهای یک‌گام خارج از نمونه × √افق)، ارزیابی همهٔ مدل‌ها و سطح اتکا. */
-export function forecastSeries(y, h, method, moy0, {allowNeg = false, extra = null, prefer = null} = {}){
+export function forecastSeries(y0, h, method, moy0, {allowNeg = false, extra = null, prefer = null} = {}){
+  /* صفرهای ابتدای سری (کاربری تازه‌وارد) شیب OLS را مصنوعی بالا می‌برد */
+  let lead = 0;
+  while(lead < y0.length - 2 && !(y0[lead] > 0)) lead++;
+  const y = lead > 0 ? y0.slice(lead) : y0;
+  const moyAdj = moy0 ? ((moy0 - 1 + lead) % 12) + 1 : moy0;
   const n = y.length, cands = {...stdCands(), ...(extra || {})};
   if(n < 2) return {fc:rng(h).map(() => y[0] || 0), lo:rng(h).map(() => y[0] || 0), hi:rng(h).map(() => y[0] || 0), method:"linear", eval:null, sigma:0, rel:{level:"none", msg:"برای پیش‌بینی حداقل ۲ ماه داده لازم است؛ پیش‌بینی قابل اتکا نیست."}};
-  const ev = n >= 4 ? evaluate(cands, y, moy0, allowNeg) : {results:{}, best:null};
+  const nz = y.filter(v => v > 0).length, sparse = nz < Math.max(4, n * 0.5);
+  const ev = n >= 4 ? evaluate(cands, y, moyAdj, allowNeg) : {results:{}, best:null};
   let id = method, note = null;
   if(id === "auto" && prefer && ev.best && ev.best !== prefer.id && ev.results[prefer.id]?.ok && ev.results[prefer.id].smape <= ev.results[ev.best].smape*prefer.tol + 1e-9){ id = prefer.id; note = `«${prefer.t}» به‌دلیل خطای قابل‌مقایسه با بهترین مدل (حداکثر ${Math.round((prefer.tol - 1)*100)}٪ بیشتر) و آگاهی از ساختار اجزا ترجیح داده شد.`; }
-  else if(id === "auto"){ id = ev.best || (n >= 3 ? "linear" : "ma"); if(!ev.best) note = "داده برای انتخاب خودکار مبتنی بر آزمون خارج از نمونه کافی نیست؛ روند خطی به‌عنوان مدل پایه استفاده شد."; }
-  else if(cands[id] && n < cands[id].min){ const was = id; id = ev.best || (n >= 3 ? "linear" : "ma"); note = `«${METHODS[was]?.t || was}» با ${n} ماه داده قابل اجرا نیست؛ به «${METHODS[id]?.t || id}» تبدیل شد.`; }
-  const cd = cands[id] || cands.linear, raw = cd.run(y, h, moy0), neg = allowNeg;
+  else if(id === "auto"){
+    id = ev.best || (n >= 12 ? "snaive" : n >= 4 ? "dholt" : n >= 3 ? "ses" : "ma");
+    if(sparse && (id === "linear" || id === "holt")){
+      const alt = ev.results.dholt?.ok ? "dholt" : ev.results.ses?.ok ? "ses" : ev.results.ma?.ok ? "ma" : id;
+      if(alt !== id){ note = `سری کم‌تراکم (${nz} ماه غیرصفر از ${n})؛ به‌جای «${METHODS[id]?.t || id}» از «${METHODS[alt]?.t || alt}» استفاده شد تا رشد مصنوعی مهار شود.`; id = alt; }
+    }
+    if(!ev.best && !note) note = "داده برای انتخاب خودکار مبتنی بر آزمون خارج از نمونه کافی نیست؛ مدل سطح‌محور استفاده شد.";
+  }
+  else if(cands[id] && n < cands[id].min){ const was = id; id = ev.best || (n >= 3 ? "ses" : "ma"); note = `«${METHODS[was]?.t || was}» با ${n} ماه داده قابل اجرا نیست؛ به «${METHODS[id]?.t || id}» تبدیل شد.`; }
+  const cd = cands[id] || cands.linear, raw = cd.run(y, h, moyAdj), neg = allowNeg;
   const fc = raw.map(v => neg ? v : Math.max(0, v));
-  const myEval = ev.results[id] || (n >= 4 ? backtest(cd.run, cd.min, y, moy0, neg) : {ok:false});
+  const myEval = ev.results[id] || (n >= 4 ? backtest(cd.run, cd.min, y, moyAdj, neg) : {ok:false});
   let sigma, sigmaSrc;
   if(myEval.ok && myEval.errs.length >= MIN_TEST){ sigma = Math.sqrt(mean(myEval.errs.map(e => e*e))); sigmaSrc = "oos"; }
   else { const f = ols(y); sigma = sd(y.map((v, i) => v - (f.a + f.b*i))) || sd(y); sigmaSrc = "insample"; }
