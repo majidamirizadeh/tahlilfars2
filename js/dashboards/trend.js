@@ -129,22 +129,65 @@ export function renderTrend({data, onSettings}){
   const baseSpec = {labels, short, years, nAct, off:a, axes, rtl};
   const ttl = (i, f) => labelsFull[i] + (f ? " — پیش‌بینی" : isPartial(i) ? " (ماه ناقص)" : "");
 
-  /* سال جاری و سال‌های فعال (خاموش/روشن) */
+  /* سال جاری و سال‌های فعال (خاموش/روشن) — محور فشرده می‌شود تا جای خالی نماند */
   const curYear = yearSet.length ? yearSet[yearSet.length - 1] : null;
   const activeYears = yearSet.filter(y => y === curYear || !ui.yearsOff.includes(y));
   const yearOn = (i) => { const y = years[i]; return !y || y === curYear || !ui.yearsOff.includes(y); };
+  const keepIdx = [];
+  for(let i = 0; i < nAct; i++) if(yearOn(i)) keepIdx.push(i);
+  const nActVis = keepIdx.length;
+  for(let i = nAct; i < codesAll.length; i++) keepIdx.push(i);
+  const pack = arr => keepIdx.map(i => (arr || [])[i] ?? null);
+  const labelsVis = pack(labels), shortVis = pack(short), yearsVis = pack(years), labelsFullVis = pack(labelsFull);
+  const baseSpecVis = {labels:labelsVis, short:shortVis, years:yearsVis, nAct:nActVis, off:0, axes, rtl};
+  const ttlVis = (i, f) => (labelsFullVis[i] || "") + (f ? " — پیش‌بینی" : (keepIdx[i] != null && isPartial(keepIdx[i]) ? " (ماه ناقص)" : ""));
+  const cumUntil = (ent, g) => {
+    if(g == null || g < 0) return 0;
+    const gi = Math.min(a + g, M - 1);
+    const yr = String(model.months[gi]).slice(0, 4);
+    let t = 0;
+    for(let i = 0; i <= g && a + i < M; i++) if(String(model.months[a + i]).slice(0, 4) === yr) t += ent[a + i] || 0;
+    return t;
+  };
+  const tipForVis = (list) => i => {
+    const isFc = i >= nActVis, j = i - nActVis, rows = [];
+    list.forEach(s => {
+      const u = unit(s.m), isR = s.m === "ratio";
+      if(!isFc){
+        const gi = keepIdx[i], v = s.rawFull ? s.rawFull[gi] : s.raw[i];
+        const prev = gi > 0 && s.ent ? s.ent[a + gi - 1] : null;
+        rows.push([s.name, `${fmt(s.m, v)} ${u}${delta(s.m, v, prev)}${s.out?.includes(gi) ? " — نقطهٔ پرت" : ""}`, s.color]);
+        if(!isR && s.ent) rows.push(["جمع از ابتدای سال", `${fmt(s.m, cumUntil(s.ent, gi))} ${u}`]);
+      } else if(s.rraw){
+        rows.push([s.name + " (پیش‌بینی)", `${fmt(s.m, s.rraw.fc[j])} ${u}`, s.color]);
+        if(bandOn) rows.push(["بازه " + fa(S("trend.confidence")) + "٪", `${fmt(s.m, s.rraw.lo[j])} تا ${fmt(s.m, s.rraw.hi[j])}`]);
+        if(!isR && s.ent){
+          const ytd = cumUntil(s.ent, nAct - 1);
+          let fcSum = 0; for(let k = 0; k <= j; k++) fcSum += s.rraw.fc[k] || 0;
+          rows.push(["جمع تا این ماه (واقعی سال + پیش‌بینی)", `${fmt(s.m, ytd + fcSum)} ${u}`]);
+          let fcAll = 0; for(let k = 0; k < s.rraw.fc.length; k++) fcAll += s.rraw.fc[k] || 0;
+          rows.push(["جمع تا پایان افق پیش‌بینی", `${fmt(s.m, ytd + fcAll)} ${u}`]);
+        }
+      }
+    });
+    return tipHtml(ttlVis(i, isFc), rows);
+  };
 
   /* ── ۱) نمودار ترکیبی شاخص‌های انتخابی (اولین نمودار؛ پیش‌بینی به‌طور پیش‌فرض روشن) ── */
   const combS = mets.map(m => {
     const s = mkSeries(m, it[m], res[m], {out:mets.length === 1});
-    /* نقاط سال‌های خاموش روی نمودار اصلی null می‌شوند */
-    s.act = (s.act || []).map((v, i) => yearOn(i) ? v : null);
-    s.raw = (s.raw || []).map((v, i) => yearOn(i) ? v : null);
+    s.rawFull = s.raw;
+    s.act = pack(s.act);
+    s.raw = pack(s.raw);
+    s.out = (s.out || []).map(gi => keepIdx.indexOf(gi)).filter(x => x >= 0);
     return s;
   });
-  const combChart = slot("comb", {...baseSpec, type:"ts", series:combS, band:bandOn ? "single" : false, height:380, anim, zoom:true, hk:"comb", aria:"روند ترکیبی شاخص‌های انتخابی", tip:tipFor(combS, ttl)});
+  const combChart = slot("comb", {...baseSpecVis, type:"ts", series:combS, band:bandOn ? "single" : false, height:380, anim, zoom:true, hk:"comb", aria:"روند ترکیبی شاخص‌های انتخابی", tip:tipForVis(combS)});
   const chips = `<div class="tr-mchips" role="group" aria-label="شاخص‌های نمودار (انتخاب ترکیبی)">${MAIN.map(m => `<button type="button" class="tr-mchip ${mets.includes(m) ? "on" : ""}" style="--c:${METRICS[m].c}" data-tr-m="${m}" data-tr-hl="comb" data-sid="${m}" aria-pressed="${mets.includes(m)}"><i></i>${esc(METRICS[m].t)} <small>${esc(unit(m))}</small></button>`).join("")}</div>`;
   const dlK = (m, cur, pv) => { if(pv == null || !isFinite(pv) || (m !== "ratio" && !pv)) return ""; const d = m === "ratio" ? cur - pv : pctChange(cur, pv); return d == null ? "" : ` <em class="${d >= 0 ? "up" : "down"}">${d >= 0 ? "▲" : "▼"} ${fa(Math.abs(d), m === "ratio" ? 1 : 0)}${m === "ratio" ? " واحد" : "٪"}</em>`; };
+  /* پایان‌سال پیش‌بینی‌شده برای شاخص‌های جمع‌پذیر (سال جاری) */
+  const yeMap = {};
+  for(const m of MAIN){ if(m !== "ratio") yeMap[m] = ui.fcOn ? yearEnd(it, m, model, fo(ckTop)) : null; }
   /* باکس‌های شاخص به تفکیک سال (نه جمع کل بازه) */
   const yearRanges = yearSet.map(y => {
     const idxs = []; for(let i = a; i <= b; i++) if(String(model.months[i]).slice(0, 4) === y) idxs.push(i);
@@ -159,10 +202,12 @@ export function renderTrend({data, onSettings}){
       const last = it[m][yr.to], prev = yr.to > 0 ? it[m][yr.to - 1] : null;
       const isLastYear = yr.y === curYear;
       const f1 = isLastYear && r.origin === b ? r.fc[0] : null;
+      const ye = isLastYear ? yeMap[m] : null;
       return `<div class="tr-kpi-y ${mets.includes(m) ? "on" : ""}" style="--c:${METRICS[m].c}" data-tr-m="${m}"><span class="tr-kl"><i style="background:${METRICS[m].c}"></i>${METRICS[m].t}<small>${esc(unit(m))}</small></span>
-        <b class="tr-kv">${fmt(m, tot)}<small>${isR ? "میانگین سال" : "جمع سال"}</small></b>
+        <b class="tr-kv">${fmt(m, tot)}<small>${isR ? "میانگین سال" : "جمع واقعی تاکنون"}</small></b>
         <span class="tr-kd">آخرین ماه: <b>${fmt(m, last)}</b>${dlK(m, last, prev)}</span>
-        ${f1 != null ? `<span class="tr-kd">پیش‌بینی ماه بعد: <b>${fmt(m, f1)}</b>${dlK(m, f1, last)}</span>` : ""}</div>`;
+        ${f1 != null ? `<span class="tr-kd">پیش‌بینی ماه بعد: <b>${fmt(m, f1)}</b>${dlK(m, f1, last)}</span>` : ""}
+        ${ye ? `<span class="tr-kd">جمع تا پایان سال (با پیش‌بینی): <b>${fmt(m, ye.total)}</b> <small>از ${fmt(m, ye.lo)} تا ${fmt(m, ye.hi)}</small></span>` : ""}</div>`;
     }).join("");
     return `<div class="tr-kpi-year"><div class="tr-kpi-year-h" style="border-color:${yearColor(yr.y)}"><i style="background:${yearColor(yr.y)}"></i>سال ${yLabel}</div><div class="tr-kpi-year-g">${cells}</div></div>`;
   }).join("");
