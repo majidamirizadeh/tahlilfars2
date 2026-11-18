@@ -72,20 +72,35 @@ function arimaCore(y){
   return best;
 }
 
-/** محدود کردن شیب روند نسبت به سطح اخیر تا پیش‌بینی‌های انفجاری (مخصوصاً روی کاربری‌های کم‌داده) رخ ندهد */
+/** محدود کردن شیب نسبت به سطح اخیر؛ پیش‌بینی حتماً از آخرین مشاهده لنگر می‌شود */
 function dampSlope(level, b, h){
   const L = Math.max(Math.abs(level), 1e-9);
-  /* حداکثر ±۸٪ رشد/افت ماهانه نسبت به سطح اخیر؛ برای افق بلند کمی سخت‌گیرانه‌تر */
-  const cap = L * 0.08 * Math.max(0.4, 1 - (h - 1) * 0.03);
+  /* حداکثر ±۵٪ تغییر ماهانه نسبت به سطح اخیر */
+  const cap = L * 0.05 * Math.max(0.35, 1 - (h - 1) * 0.04);
   return Math.max(-cap, Math.min(cap, b));
+}
+/** پیش‌بینی رونددار با لنگر به آخرین نقطه (جلوگیری از پرش ناپیوسته) */
+function trendFromLast(y, h, bRaw){
+  const last = y[y.length - 1] ?? 0;
+  const b = dampSlope(last, bRaw, h);
+  return rng(h).map(i => last + b * (i + 1));
+}
+/** سقف/کف معقول نسبت به تاریخچهٔ اخیر (برای سری‌های کاربری کم‌داده) */
+function clampFc(y, fc){
+  if(!y.length || !fc.length) return fc;
+  const recent = y.slice(-Math.min(12, y.length));
+  const pos = recent.filter(v => v > 0);
+  const base = pos.length ? pos : recent;
+  const mx = Math.max(...base.map(Math.abs), 1e-9);
+  const med = median(base.map(Math.abs));
+  /* حداکثر ۲٫۵× بزرگ‌ترین ماه اخیر یا ۴× میانه — هر کدام بزرگ‌تر */
+  const hi = Math.max(mx * 2.5, med * 4, mx);
+  const lo = 0;
+  return fc.map(v => Math.max(lo, Math.min(hi, v)));
 }
 export const METHODS = {
   linear:{t:"روند خطی (رگرسیون OLS)", en:"Linear Trend", min:() => 3,
-    run:(y, h) => {
-      const f = ols(y), lvl = y[y.length - 1] ?? mean(y);
-      const b = dampSlope(lvl, f.b, h);
-      return rng(h).map(i => f.a + b*(y.length + i));
-    }},
+    run:(y, h) => trendFromLast(y, h, ols(y).b)},
   ma:{t:"میانگین متحرک", en:"Moving Average", min:() => 2,
     run:(y, h) => { const k = Math.min(Math.max(2, S("trend.maWindow")), y.length), m = mean(y.slice(-k)); return rng(h).map(() => m); }},
   wma:{t:"میانگین متحرک وزنی", en:"Weighted Moving Average", min:() => 2,
@@ -93,21 +108,29 @@ export const METHODS = {
   ses:{t:"هموارسازی نمایی ساده", en:"Simple Exponential Smoothing", min:() => 3,
     run:(y, h) => { const f = sesCore(y); return rng(h).map(() => f.l); }},
   holt:{t:"هولت (روند خطی)", en:"Holt's Linear Trend", min:() => 4,
-    run:(y, h) => {
-      const f = holtCore(y, 1), b = dampSlope(f.l, f.b, h);
-      return rng(h).map(i => f.l + (i + 1)*b);
-    }},
+    run:(y, h) => { const f = holtCore(y, 1); return trendFromLast(y, h, f.b); }},
   dholt:{t:"هولت با روند میرا", en:"Damped Holt", min:() => 4,
     run:(y, h) => {
-      const phi = .9, f = holtCore(y, phi), b = dampSlope(f.l, f.b, h);
-      return rng(h).map(i => { let s = 0; for(let k = 1; k <= i + 1; k++) s += Math.pow(phi, k); return f.l + s*b; });
+      const phi = .9, f = holtCore(y, phi), last = y[y.length - 1] ?? f.l, b = dampSlope(last, f.b, h);
+      return rng(h).map(i => { let s = 0; for(let k = 1; k <= i + 1; k++) s += Math.pow(phi, k); return last + s * b; });
     }},
   snaive:{t:"فصلی ساده", en:"Seasonal Naive", min:() => SEASON,
-    run:(y, h) => { const n = y.length; return rng(h).map(i => y[n - SEASON + (i % SEASON)]); }},
+    run:(y, h) => {
+      const n = y.length, last = y[n - 1] ?? 0;
+      /* نسبت به سال قبل، اما اگر سال قبل چند برابر سطح اخیر بود به سطح اخیر مقیاس می‌شود */
+      const recent = y.slice(-Math.min(6, n));
+      const rMax = Math.max(...recent.map(Math.abs), 1e-9);
+      return rng(h).map(i => {
+        const v = y[n - SEASON + (i % SEASON)];
+        if(Math.abs(v) > rMax * 3) return last;
+        return v;
+      });
+    }},
   hw:{t:"هولت-وینترز (جمعی)", en:"Holt-Winters (Additive)", min:() => Math.max(2*SEASON, S("trend.seasonalMin")),
     run:(y, h) => {
-      const f = hwCore(y), n = y.length, b = dampSlope(f.l, f.b, h);
-      return rng(h).map(i => f.l + (i + 1)*b + f.s[(n + i) % SEASON]);
+      const f = hwCore(y), n = y.length, last = y[n - 1] ?? f.l, b = dampSlope(last, f.b, h);
+      const sLast = f.s[(n - 1) % SEASON] || 0;
+      return rng(h).map(i => last + b * (i + 1) + ((f.s[(n + i) % SEASON] || 0) - sLast));
     }},
   arima:{t:"ARIMA(p,d,0) با عرض از مبدأ", en:"ARIMA", min:() => Math.max(10, S("trend.arimaMin")),
     run:(y, h) => {
@@ -169,21 +192,29 @@ export function forecastSeries(y0, h, method, moy0, {allowNeg = false, extra = n
   if(id === "auto" && prefer && ev.best && ev.best !== prefer.id && ev.results[prefer.id]?.ok && ev.results[prefer.id].smape <= ev.results[ev.best].smape*prefer.tol + 1e-9){ id = prefer.id; note = `«${prefer.t}» به‌دلیل خطای قابل‌مقایسه با بهترین مدل (حداکثر ${Math.round((prefer.tol - 1)*100)}٪ بیشتر) و آگاهی از ساختار اجزا ترجیح داده شد.`; }
   else if(id === "auto"){
     id = ev.best || (n >= 12 ? "snaive" : n >= 4 ? "dholt" : n >= 3 ? "ses" : "ma");
-    if(sparse && (id === "linear" || id === "holt")){
-      const alt = ev.results.dholt?.ok ? "dholt" : ev.results.ses?.ok ? "ses" : ev.results.ma?.ok ? "ma" : id;
-      if(alt !== id){ note = `سری کم‌تراکم (${nz} ماه غیرصفر از ${n})؛ به‌جای «${METHODS[id]?.t || id}» از «${METHODS[alt]?.t || alt}» استفاده شد تا رشد مصنوعی مهار شود.`; id = alt; }
+    const last = y[n - 1] ?? 0, mx = Math.max(...y.map(Math.abs), 1e-9);
+    const collapsed = Math.abs(last) < mx * 0.15; /* سطح اخیر خیلی پایین‌تر از سقف تاریخچه */
+    if((sparse || collapsed) && (id === "linear" || id === "holt" || id === "hw" || id === "arima" || id === "snaive")){
+      const alt = ev.results.ses?.ok ? "ses" : ev.results.ma?.ok ? "ma" : ev.results.dholt?.ok ? "dholt" : id;
+      if(alt !== id){ note = `سری ${sparse ? "کم‌تراکم" : "با افت سطح اخیر"}؛ به‌جای «${METHODS[id]?.t || id}» از «${METHODS[alt]?.t || alt}» استفاده شد.`; id = alt; }
     }
     if(!ev.best && !note) note = "داده برای انتخاب خودکار مبتنی بر آزمون خارج از نمونه کافی نیست؛ مدل سطح‌محور استفاده شد.";
   }
   else if(cands[id] && n < cands[id].min){ const was = id; id = ev.best || (n >= 3 ? "ses" : "ma"); note = `«${METHODS[was]?.t || was}» با ${n} ماه داده قابل اجرا نیست؛ به «${METHODS[id]?.t || id}» تبدیل شد.`; }
   const cd = cands[id] || cands.linear, raw = cd.run(y, h, moyAdj), neg = allowNeg;
-  const fc = raw.map(v => neg ? v : Math.max(0, v));
+  /* لنگر + سقف نسبت به تاریخچه؛ جلوگیری از پرش عمودی مثل تصویر کاربری‌ها */
+  let fc = clampFc(y, raw.map(v => neg ? v : Math.max(0, v)));
   const myEval = ev.results[id] || (n >= 4 ? backtest(cd.run, cd.min, y, moyAdj, neg) : {ok:false});
   let sigma, sigmaSrc;
   if(myEval.ok && myEval.errs.length >= MIN_TEST){ sigma = Math.sqrt(mean(myEval.errs.map(e => e*e))); sigmaSrc = "oos"; }
   else { const f = ols(y); sigma = sd(y.map((v, i) => v - (f.a + f.b*i))) || sd(y); sigmaSrc = "insample"; }
+  /* σ را هم نسبت به سطح اخیر محدود کن تا باند عدم‌قطعیت منفجر نشود */
+  const lvl = Math.abs(y[n - 1] ?? mean(y)) || 1;
+  sigma = Math.min(sigma, lvl * 0.75);
   const z = Z(S("trend.confidence"));
-  const lo = fc.map((v, i) => neg ? v - z*sigma*Math.sqrt(i + 1) : Math.max(0, v - z*sigma*Math.sqrt(i + 1))), hi = fc.map((v, i) => v + z*sigma*Math.sqrt(i + 1));
+  const lo = fc.map((v, i) => neg ? v - z*sigma*Math.sqrt(i + 1) : Math.max(0, v - z*sigma*Math.sqrt(i + 1)));
+  const hiRaw = fc.map((v, i) => v + z*sigma*Math.sqrt(i + 1));
+  const hi = clampFc(y, hiRaw.map((v, i) => Math.max(v, fc[i])));
   const minB = S("trend.minBacktest"), nTest = myEval.ok ? myEval.n : 0;
   let rel;
   if(n < minB || !myEval.ok) rel = {level:"none", msg:`تاریخچه (${n} ماه) برای ارزیابی خارج از نمونه کافی نیست؛ پیش‌بینی قابل اتکا نیست و فقط راهنماست.`};
