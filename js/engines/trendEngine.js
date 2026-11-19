@@ -170,6 +170,7 @@ const forecastMemo = new Map();
 const fingerprint = (it, id, model) => {
   let h = 2166136261;
   const feed = v => { const x = String(v) + "|"; for(let i=0;i<x.length;i++){ h ^= x.charCodeAt(i); h = Math.imul(h, 16777619); } };
+  feed(model.period?.to || "");
   for(const c of model.months) feed(c);
   const keys = (id === "income" || id === "collection") ? [id, ...PARTS] : [id];
   for(const k of keys){ feed(k); for(const v of (it[k] || [])) feed(v); }
@@ -226,8 +227,10 @@ export function outliers(y){
 
 /* ───────────── قالب‌بندی و کیفیت داده ───────────── */
 export const fmtFa = (v, d = 0) => (v == null || !isFinite(v)) ? "—" : Number(v).toLocaleString("fa-IR", {maximumFractionDigits:d, minimumFractionDigits:0});
-/** کیفیت داده (روی کل داده، مستقل از فیلتر) */
+/** کیفیت داده (روی کل داده، مستقل از فیلتر) — برای مدل ثابت فقط یک‌بار محاسبه می‌شود. */
+const qualityMemo = new WeakMap();
 export function dataQuality(model){
+  if(qualityMemo.has(model)) return qualityMemo.get(model);
   const M = model.months.length; let negInc = 0, negCol = 0, bigRatio = 0, mismatch = 0, noInc = 0;
   for(const r of model.recs){
     const inc = r.it.income, col = r.it.collection;
@@ -247,7 +250,7 @@ export function dataQuality(model){
   if(mismatch) items.push({sev:"info", t:`${fmtFa(mismatch)} مورد (ردیف×ماه) که «سایر» (درآمد − اجزا) بیش از ۵٪ درآمد منفی است؛ یعنی جمع کل درآمد با اجزای شناخته‌شده نمی‌خواند.`});
   const nt = model.stats?.noTotal; if(nt){ let tot = 0; for(const r of model.recs) for(let i = 0; i < M; i++) tot += r.it.income[i] || 0;
     items.push({sev:"info", t:`${fmtFa(nt)} رکورد (امور×شهر×کاربری) اجزای درآمد دارند ولی ردیف «جمع کل درآمد» در فایل ندارند؛ طبق منطق فایل درآمد آن‌ها صفر محسوب شد و در جمع درآمد نیامده است (مجموع اجزای آن‌ها ≈ ${fmtFa(model.stats.noTotalAmt/1e9, 2)} میلیارد ریال، ${fmtFa(model.stats.noTotalAmt/Math.max(1, tot)*100, 3)}٪ درآمد کل).`}); }
-  return items;
+  qualityMemo.set(model, items); return items;
 }
 
 /* ───────────── برداشت‌های توصیفی (فقط از خروجی مدل پیش‌بینی) ───────────── */
