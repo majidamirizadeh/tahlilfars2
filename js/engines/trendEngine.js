@@ -161,7 +161,8 @@ const memo = new WeakMap();
 export function forecastMetric(it, id, model, h, o = {}){
   const M = model.months.length, method = o.method || "auto", a = o.a ?? 0, b = o.b ?? M - 1, full = S("trend.trainFull");
   const key = [id, h, method, full ? "f" : a + "-" + b, S("trend.components"), S("trend.excludePartial"), S("trend.confidence"), S("trend.maWindow"), S("trend.hotFrom"), S("trend.hotTo"), S("trend.minBacktest"), S("trend.seasonalMin"), S("trend.arimaMin")].join("|");
-  const holder = o.ck ? model : it; let mm = memo.get(holder); if(!mm) memo.set(holder, mm = new Map()); if(mm.size > 4000) mm.clear(); const fk = (o.ck || "") + "|" + key + "|" + [S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(","); if(mm.has(fk)) return mm.get(fk);
+  /* هر سری تجمیع‌شده حافظهٔ مستقل دارد؛ کلیدهای نمایشی مشترک نباید پیش‌بینی گروه دیگری را بازگردانند. */
+  const holder = it; let mm = memo.get(holder); if(!mm) memo.set(holder, mm = new Map()); if(mm.size > 4000) mm.clear(); const fk = key + "|" + [S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(","); if(mm.has(fk)) return mm.get(fk);
   const tr0 = full ? 0 : a; let tr1 = full ? M - 1 : b, cut = 0;
   const pi = periodInfo(model);
   if(S("trend.excludePartial") && pi.partial && tr1 === M - 1 && tr1 - tr0 >= 3){ tr1--; cut = 1; }
