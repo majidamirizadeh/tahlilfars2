@@ -183,7 +183,32 @@ export function paint(slot, replay){
   const animate = !!sp.anim && !sp._painted && motionOK() || (replay && sp.anim && motionOK());
   try{ slot.innerHTML = DRAW[sp.type](sp, W, animate); slot.dataset.w = W; sp._painted = true; }catch(e){ console.error("chart", sp.type, e); slot.innerHTML = `<div class="tc-empty">نمودار رسم نشد.</div>`; }
 }
-export function paintAll(root){ root.querySelectorAll("[data-chart]").forEach(s => paint(s)); }
+/* نمودارهای خارج از محدودهٔ دید فوراً رسم نمی‌شوند؛ هنگام نزدیک‌شدن به viewport رسم خواهند شد. */
+let chartObserver = null;
+function ensureChartObserver(){
+  if(chartObserver || !("IntersectionObserver" in window)) return;
+  chartObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      const el = entry.target;
+      if(!el.isConnected){ chartObserver.unobserve(el); return; }
+      if(entry.isIntersecting){ chartObserver.unobserve(el); paint(el); }
+    });
+  }, {root:null, rootMargin:"500px 0px", threshold:0});
+}
+export function paintAll(root, onlyChanged = false){
+  const slots = [...root.querySelectorAll("[data-chart]")];
+  if(!("IntersectionObserver" in window)){ slots.forEach(el => {
+    const w = Math.max(260, Math.floor(el.clientWidth || 600));
+    if(!onlyChanged || !el.querySelector("svg") || +el.dataset.w !== w) paint(el);
+  }); return; }
+  ensureChartObserver();
+  slots.forEach(el => {
+    const w = Math.max(260, Math.floor(el.clientWidth || 600)), hasSvg = !!el.querySelector("svg");
+    if(onlyChanged && hasSvg && +el.dataset.w === w) return;
+    const r = el.getBoundingClientRect(), near = r.bottom >= -500 && r.top <= (window.innerHeight || 700) + 500;
+    if(near) paint(el); else chartObserver.observe(el);
+  });
+}
 /** کادر جای‌نگهدار نمودار؛ spec در رجیستری ذخیره می‌شود */
 export function slot(id, spec, cls = ""){ specs.set(id, {...spec, id}); return `<div class="tc-slot ${cls}" data-chart="${esc(id)}"></div>`; }
 /** اندیس نزدیک‌ترین ماه برای مختصات اشاره‌گر (clientX) روی یک نمودار ts؛ null اگر هندسه نیست */
