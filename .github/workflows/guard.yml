@@ -1,0 +1,16 @@
+# پیشنهادی: این فایل را به .github/workflows/guard.yml منتقل کنید.
+# روی هر Pull Request و Push: جلوگیری از ورود فایل داده + بررسی importها
+name: guard
+on:
+  pull_request:
+  push: { branches-ignore: [main] }
+permissions: { contents: read }
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node tools/check-no-data.mjs
+      - run: node tools/check-imports.mjs
