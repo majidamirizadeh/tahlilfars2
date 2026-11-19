@@ -33,7 +33,7 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
         <p class="st-note">ایجاد و حذف حساب‌های کاربری سامانه. دسترسی این بخش فقط برای مدیر فعال است.</p>
         <form class="adm-create" data-adm-form>
           <label>نام کاربری<input name="username" type="text" minlength="2" maxlength="60" autocomplete="off" required></label>
-          <label>رمز عبور اولیه<input name="password" type="password" minlength="4" autocomplete="new-password" required></label>
+          <label>رمز عبور اولیه<input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
           <label>نقش حساب<select name="role"><option value="user">کاربر عادی</option><option value="admin">مدیر</option></select></label>
           <button type="submit" class="adm-primary">ایجاد کاربر</button>
         </form>
@@ -167,9 +167,9 @@ export function initSettingsMenu({button, getOptions=()=>[], beforeOpen=null}){
       if(pass){
         const username=pass.dataset.admPass;
         if(!isAdmin()||!username) return;
-        const password=prompt("رمز عبور جدید برای «"+username+"» (حداقل ۴ کاراکتر):");
+        const password=prompt("رمز عبور جدید برای «"+username+"» (حداقل ۸ کاراکتر):");
         if(password===null) return;
-        if(password.length<4){ adminMessage("رمز عبور باید حداقل ۴ کاراکتر باشد.","err"); return; }
+        if(password.length<8){ adminMessage("رمز عبور باید حداقل ۸ کاراکتر باشد.","err"); return; }
         pass.disabled=true;
         try{
           await changePassword(username,password);
