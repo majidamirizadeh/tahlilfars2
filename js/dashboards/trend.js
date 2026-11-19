@@ -130,7 +130,7 @@ export function renderTrend({data, onSettings}){
   const ttl = (i, f) => labelsFull[i] + (f ? " — پیش‌بینی" : isPartial(i) ? " (ماه ناقص)" : "");
 
   /* سال جاری و سال‌های فعال (خاموش/روشن) — محور فشرده می‌شود تا جای خالی نماند */
-  const curYear = yearSet.length ? yearSet[yearSet.length - 1] : null;
+  const curYear = String(model.months[M - 1] || "").slice(0, 4) || null;
   const activeYears = yearSet.filter(y => y === curYear || !ui.yearsOff.includes(y));
   const yearOn = (i) => { const y = years[i]; return !y || y === curYear || !ui.yearsOff.includes(y); };
   const keepIdx = [];
@@ -262,11 +262,12 @@ export function renderTrend({data, onSettings}){
     const partSer = PARTS.map(k => ({id:k, name:METRICS[k].t, color:METRICS[k].c, raw:visibleActualIdx.map(i => it[k][a + i] || 0)}));
     const visibleLabels = visibleActualIdx.map(i => labels[i]);
     const visibleYears = visibleActualIdx.map(i => years[i]);
+    const visibleLabelsFull = visibleActualIdx.map(i => labelsFull[i]);
     const monTot = visibleActualIdx.map((_, i) => partSer.reduce((t, s) => t + Math.max(0, s.raw[i] || 0), 0));
     const pct = ui.revMode === "pct", barSer = partSer.map(s => ({...s, values:s.raw.map((v, i) => pct ? (monTot[i] ? Math.max(0, v)/monTot[i]*100 : 0) : scale("income", v))}));
     const barLab = visibleLabels, barYears = visibleYears;
     const compChart = slot("comp", {type:"bars", stacked:true, labels:barLab, years:barYears, series:barSer, rtl, height:320, anim, unit:pct ? "٪" : un.t, fmtAxis:pct ? v => fa(v, 0) + "٪" : null, aria:"ترکیب ماهانهٔ درآمد",
-      tip:i => tipHtml(labelsFull[i], [...partSer.map(s => [s.name, `${fa(scale("income", s.raw[i]), 1)} ${un.t} (${fa(monTot[i] ? s.raw[i]/monTot[i]*100 : 0, 1)}٪)`, s.color]), ["جمع اجزا", `${fa(scale("income", monTot[i]), 1)} ${un.t}`]])});
+      tip:i => tipHtml(visibleLabelsFull[i], [...partSer.map(s => [s.name, `${fa(scale("income", s.raw[i]), 1)} ${un.t} (${fa(monTot[i] ? s.raw[i]/monTot[i]*100 : 0, 1)}٪)`, s.color]), ["جمع اجزا", `${fa(scale("income", monTot[i]), 1)} ${un.t}`]])});
     const dTot = partSer.map(s => ({...s, v:s.raw.reduce((x, y) => x + y, 0)})), dSum = dTot.reduce((t, s) => t + Math.max(0, s.v), 0);
     const donutChart = slot("donut", {type:"donut", height:270, anim, aria:"سهم اجزای درآمد", items:dTot.map(s => ({id:s.id, value:s.v, color:s.color, tip:`${s.name}: ${fa(scale("income", s.v), 1)} ${un.t} (${fa(dSum ? s.v/dSum*100 : 0, 1)}٪)`})), center:{t1:fa(scale("income", dSum), 0), t2:un.t}});
     const dLeg = `<ul class="tr-dleg">${dTot.map(s => `<li style="--c:${s.color}"><i></i><span>${esc(s.name)}</span><b>${fa(scale("income", s.v), 1)}</b><em>${fa(dSum ? s.v/dSum*100 : 0, 1)}٪</em></li>`).join("")}</ul>`;
