@@ -160,7 +160,11 @@ const memo = new WeakMap();
  *  خروجی: {fc, lo, hi, method, eval, rel, sigma, note, origin (اندیس آخرین ماه واقعی)، refIdx/ref (آخرین ماه کامل آموزش)، uncert (نیم‌پهنا/مقدار در آخر افق)، uncertHigh} */
 export function forecastMetric(it, id, model, h, o = {}){
   const M = model.months.length, method = o.method || "auto", a = o.a ?? 0, b = o.b ?? M - 1, full = S("trend.trainFull");
-  const key = [id, h, method, full ? "f" : a + "-" + b, S("trend.components"), S("trend.excludePartial"), S("trend.confidence"), S("trend.maWindow"), S("trend.hotFrom"), S("trend.hotTo"), S("trend.minBacktest"), S("trend.seasonalMin"), S("trend.arimaMin")].join("|");
+  /* هویت دادهٔ واقعی نیز جزو کلید است: شناسهٔ کاربری ممکن است در دو فیلتر امور/شهر یکسان
+     باشد، اما سری تجمیع‌شده متفاوت است. بدون این امضا، WeakMap می‌تواند پیش‌بینی سری قبلی را
+     برای دامنهٔ جدید برگرداند (به‌ویژه مقایسهٔ کاربری پس از انتخاب امور). */
+  const dataSig = (it[id] || []).join(",") + (id === "income" ? "|" + PARTS.map(k => (it[k] || []).join(",")).join("|") : "");
+  const key = [id, h, method, full ? "f" : a + "-" + b, dataSig, S("trend.components"), S("trend.excludePartial"), S("trend.confidence"), S("trend.maWindow"), S("trend.hotFrom"), S("trend.hotTo"), S("trend.minBacktest"), S("trend.seasonalMin"), S("trend.arimaMin")].join("|");
   const holder = o.ck ? model : it; let mm = memo.get(holder); if(!mm) memo.set(holder, mm = new Map()); if(mm.size > 4000) mm.clear(); const fk = (o.ck || "") + "|" + key + "|" + [S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(","); if(mm.has(fk)) return mm.get(fk);
   const tr0 = full ? 0 : a; let tr1 = full ? M - 1 : b, cut = 0;
   const pi = periodInfo(model);
