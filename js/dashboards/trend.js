@@ -232,7 +232,7 @@ export function renderTrend({data, onSettings}){
     const visSer = ser.map(s => ({...s, rawFull:s.raw, act:pack(s.act), raw:pack(s.raw), out:(s.out || []).map(i => keepIdx.indexOf(i)).filter(i => i >= 0)}));
     const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, series:visSer, band:false, anim:false, zoom:false, pick:!!pick, aria:title, tip:tipForVis(visSer)});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
-  const entSeries = (g, ck) => mets.map(m => mkSeries(m, g.it[m], fcShow ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
+  const entSeries = (g, ck, withForecast = true) => mets.map(m => mkSeries(m, g.it[m], fcShow && withForecast ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
   const subOf = g => `${esc(METRICS[mets[0]].t)}: <b>${fmt(mets[0], g.it[mets[0]][b])}</b> ${esc(unit(mets[0]))}`;
   const nameOf = g => g.name.replace(/^امور\s*/, "");
 
@@ -328,13 +328,15 @@ export function renderTrend({data, onSettings}){
 
   /* ── مقایسه کاربری‌ها (پیش‌فرض جمع‌شده) ── */
   const btGroups = [...groupBy(recs, "bt", M).values()].sort((x, y) => sum1(y.it.income, a, b) - sum1(x.it.income, a, b));
-  const btCards = btGroups.map(g => smCard("sm-bt-" + g.id, g.name, subOf(g), entSeries(g, `B|${scopeKey}|${g.id}`), {h: 200})).join("");
+  /* جزئیات کاربری پیش‌فرض بسته است؛ تا زمان بازشدن، مدل‌های پیش‌بینی این کارت‌ها اجرا نمی‌شوند. */
+  const btCards = btGroups.map(g => smCard("sm-bt-" + g.id, g.name, subOf(g), entSeries(g, `B|${scopeKey}|${g.id}`, ui.pickOpen.bt), {h: 200})).join("");
   const btSec = `<details class="tr-revd" data-pk="bt" ${ui.pickOpen.bt ? "open" : ""}><summary>مقایسه کاربری‌ها <small>${fa(btGroups.length)} کاربری · پیش‌فرض جمع‌شده · با فیلتر سال/امور/شهر هماهنگ</small></summary>
     <div class="tr-sec"><p class="tr-sub">هر کارت روند شاخص‌های انتخابی را برای یک کاربری نشان می‌دهد. با تغییر فیلتر امور، شهر یا سال، این بخش هم به‌روز می‌شود.</p>
     ${btCards ? `<div class="tr-sm">${btCards}</div>` : `<div class="tr-card"><p class="tr-hint">کاربری‌ای در این محدوده نیست.</p></div>`}</div></details>`;
 
   /* ── برداشت‌های توصیفی (فقط از خروجی مدل) ── */
-  const ents = parGroups.map(g => { const r = forecastMetric(g.it, mets[0], model, H, fo(`P|${scopeKey}|${g.id}`)); return {name:g.name, ref:r.ref, fc1:r.fc[0], fcH:r.fc[r.fc.length - 1], uncert:r.uncert, uncertHigh:r.uncertHigh, level:r.rel.level}; });
+  /* برداشت‌های تفصیلی امور فقط وقتی پنل آن باز است به پیش‌بینی تک‌تک امور نیاز دارد. */
+  const ents = ui.pickOpen.ins ? parGroups.map(g => { const r = forecastMetric(g.it, mets[0], model, H, fo(`P|${scopeKey}|${g.id}`)); return {name:g.name, ref:r.ref, fc1:r.fc[0], fcH:r.fc[r.fc.length - 1], uncert:r.uncert, uncertHigh:r.uncertHigh, level:r.rel.level}; }) : [];
   const ye = {income:yearEnd(it, "income", model, fo(ckTop)), collection:yearEnd(it, "collection", model, fo(ckTop))};
   const ins = forecastInsights({model, res, H, fmt, unit, ents, entMetric:mets[0], ye, a, b});
   const insHtml = `<ul class="tr-ins">${ins.map(x => `<li class="tr-t-${x.tone}"><i>${SEV[x.tone] || "ℹ"}</i><span>${x.html}</span></li>`).join("")}</ul>`;
@@ -363,7 +365,8 @@ export function renderTrend({data, onSettings}){
 function finish(container){
   paintAll(container);
   if(window.lucide) lucide.createIcons();
-  if(!resizeObs && "ResizeObserver" in window){ let t = 0; resizeObs = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => { const r = document.querySelector(".tr-root"); if(r) paintAll(r); }, 120); }); }
+  /* تغییر اندازه فقط نمودارهایی را دوباره رسم می‌کند که عرض واقعی‌شان عوض شده است. */
+  if(!resizeObs && "ResizeObserver" in window){ let t = 0; resizeObs = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => { const r = document.querySelector(".tr-root"); if(r) paintAll(r, true); }, 120); }); }
   resizeObs?.disconnect(); const r = container.querySelector(".tr-root"); if(r) resizeObs?.observe(r);
 }
 
