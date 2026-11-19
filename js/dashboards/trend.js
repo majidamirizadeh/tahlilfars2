@@ -115,7 +115,7 @@ export function renderTrend({data, onSettings}){
   const origin = res[mets[0]].origin, fcShow = ui.fcOn && origin === b, nAct = b - a + 1;
   const codesAct = model.months.slice(a, b + 1), fcC = Array.from({length:H}, (_, i) => addMonths(model.months[origin], i + 1)), codesAll = [...codesAct, ...(fcShow ? fcC : [])];
   const labels = codesAll.map(c => mName(c)), short = codesAll.map(c => fa(+c.slice(4))), years = codesAll.map(c => c.slice(0, 4)), labelsFull = codesAll.map(c => mName(c, true));
-  const yearSet = [...new Set(years)];
+  const yearSet = [...new Set(codesAct.map(c => String(c).slice(0, 4)))];
   const isPartial = i => pi.partial && a + i === M - 1;
   const mkSeries = (m, ent, r, o = {}) => { const raw = ent.slice(a, b + 1);
     return {id:o.id || m, name:o.name || METRICS[m].t, color:o.color || METRICS[m].c, axis:AXIS[kd(m)], act:sc(m, raw), fc:fcShow && r ? sc(m, r.fc) : null, lo:fcShow && r ? sc(m, r.lo) : null, hi:fcShow && r ? sc(m, r.hi) : null,
@@ -189,7 +189,7 @@ export function renderTrend({data, onSettings}){
   const yeMap = {};
   for(const m of MAIN){ if(m !== "ratio") yeMap[m] = ui.fcOn ? yearEnd(it, m, model, fo(ckTop)) : null; }
   /* باکس‌های شاخص به تفکیک سال (نه جمع کل بازه) */
-  const yearRanges = yearSet.map(y => {
+  const yearRanges = yearSet.filter(y => y === curYear || !ui.yearsOff.includes(y)).map(y => {
     const idxs = []; for(let i = a; i <= b; i++) if(String(model.months[i]).slice(0, 4) === y) idxs.push(i);
     return {y, idxs, from: idxs[0], to: idxs[idxs.length - 1]};
   }).filter(yr => yr.idxs.length);
@@ -225,7 +225,11 @@ export function renderTrend({data, onSettings}){
 
   /* ── کارت نمودار کوچک (نمودار جدا برای هر امور/شهر/جزء) ── */
   const smCard = (cid, title, sub, ser, {pick, on, h = 215} = {}) => {
-    const c = slot(cid, {...baseSpec, type:"ts", compact:true, height:h, series:ser, band:false, anim:false, zoom:false, pick:!!pick, aria:title, tip:tipFor(ser, ttl)});
+    /* همان فیلتر سال نمودار اصلی، روی تمام کارت‌های مقایسه و اجزای درآمد */
+    const actualIdx = keepIdx.filter(i => i < nAct);
+    const visibleSeries = ser.map(s => ({...s, rawFull:s.raw, act:actualIdx.map(i => s.act[i] ?? null),
+      raw:actualIdx.map(i => s.raw[i] ?? null), out:(s.out || []).map(gi => actualIdx.indexOf(gi)).filter(i => i >= 0)}));
+    const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, series:visibleSeries, band:false, anim:false, zoom:false, pick:!!pick, aria:title, tip:tipForVis(visibleSeries)});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
   const entSeries = (g, ck) => mets.map(m => mkSeries(m, g.it[m], fcShow ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
   const subOf = g => `${esc(METRICS[mets[0]].t)}: <b>${fmt(mets[0], g.it[mets[0]][b])}</b> ${esc(unit(mets[0]))}`;
@@ -253,10 +257,13 @@ export function renderTrend({data, onSettings}){
   const lvlNames = ui.cities.length ? ui.cities.map(id => model.cities.find(c => c.id === id)?.t).join("، ") : ui.pars.length ? ui.pars.map(id => nameOf({name:model.pars.find(p => p.id === id).t})).join("، ") : "";
   const lvlText = ui.cities.length ? "شهر/بخش: " + lvlNames : ui.pars.length ? "امور: " + lvlNames : "کل استان";
   if(ui.pickOpen.rev){
-    const partSer = PARTS.map(k => ({id:k, name:METRICS[k].t, color:METRICS[k].c, raw:it[k].slice(a, b + 1)}));
-    const monTot = codesAct.map((_, i) => partSer.reduce((t, s) => t + Math.max(0, s.raw[i] || 0), 0));
+    const visibleActualIdx = keepIdx.filter(i => i < nAct);
+    const partSer = PARTS.map(k => ({id:k, name:METRICS[k].t, color:METRICS[k].c, raw:visibleActualIdx.map(i => it[k][a + i] || 0)}));
+    const visibleLabels = visibleActualIdx.map(i => labels[i]);
+    const visibleYears = visibleActualIdx.map(i => years[i]);
+    const monTot = visibleActualIdx.map((_, i) => partSer.reduce((t, s) => t + Math.max(0, s.raw[i] || 0), 0));
     const pct = ui.revMode === "pct", barSer = partSer.map(s => ({...s, values:s.raw.map((v, i) => pct ? (monTot[i] ? Math.max(0, v)/monTot[i]*100 : 0) : scale("income", v))}));
-    const barLab = labels.slice(0, nAct), barYears = years.slice(0, nAct);
+    const barLab = visibleLabels, barYears = visibleYears;
     const compChart = slot("comp", {type:"bars", stacked:true, labels:barLab, years:barYears, series:barSer, rtl, height:320, anim, unit:pct ? "٪" : un.t, fmtAxis:pct ? v => fa(v, 0) + "٪" : null, aria:"ترکیب ماهانهٔ درآمد",
       tip:i => tipHtml(labelsFull[i], [...partSer.map(s => [s.name, `${fa(scale("income", s.raw[i]), 1)} ${un.t} (${fa(monTot[i] ? s.raw[i]/monTot[i]*100 : 0, 1)}٪)`, s.color]), ["جمع اجزا", `${fa(scale("income", monTot[i]), 1)} ${un.t}`]])});
     const dTot = partSer.map(s => ({...s, v:s.raw.reduce((x, y) => x + y, 0)})), dSum = dTot.reduce((t, s) => t + Math.max(0, s.v), 0);
@@ -286,14 +293,13 @@ export function renderTrend({data, onSettings}){
   }
   const revSec = `<details class="tr-revd" data-pk="rev" ${ui.pickOpen.rev ? "open" : ""}><summary>جزئیات درآمد <small>روند اجزا · ستونی عددی/درصدی · دونات · جدول بر اساس سطح (استان/امور/شهر)</small></summary>${revBody}</details>`;
 
-  /* ── مقایسه سال‌ها روی هم (حداکثر ۲ شاخص؛ محور ماه ۱–۱۲) ── */
+  /* ── مقایسه سال‌ها روی هم (فقط یک شاخص؛ محور ماه ۱–۱۲) ── */
+  ui.yMetrics = ui.yMetrics.filter(m => MAIN.includes(m)).slice(0, 1);
   if(!ui.yMetrics.length) ui.yMetrics = [mets[0] || "consumption"];
-  ui.yMetrics = ui.yMetrics.filter(m => MAIN.includes(m)).slice(0, 2);
-  if(!ui.yMetrics.length) ui.yMetrics = ["consumption"];
   const yMets = ui.yMetrics;
   const moLabels = Array.from({length:12}, (_, i) => fa(i + 1));
   const yCmpSeries = [];
-  yMets.forEach((m, mi) => {
+  yMets.forEach(m => {
     activeYears.forEach(y => {
       const act = Array.from({length:12}, () => null);
       for(let i = 0; i < M; i++){
@@ -303,7 +309,7 @@ export function renderTrend({data, onSettings}){
       yCmpSeries.push({
         id: `yc-${m}-${y}`, name: `${METRICS[m].t} ${fa(y).replace(/٬/g, "")}`,
         color: yearColor(y), axis: AXIS[kd(m)], act, fc: null, lo: null, hi: null,
-        out: [], raw: act, ent: act, rraw: null, m, width: mi === 0 ? 2.8 : 2.2
+        out: [], raw: act, ent: act, rraw: null, m, width: 2.8
       });
     });
   });
@@ -316,8 +322,8 @@ export function renderTrend({data, onSettings}){
       return [s.name, v == null || !isFinite(v) ? "—" : `${fa(v, Math.abs(v) >= 100 ? 0 : 1)} ${unit(s.m)}`, s.color];
     }))
   });
-  const yChips = `<div class="tr-mchips" role="group" aria-label="شاخص‌های مقایسه سال‌ها (حداکثر ۲)">${MAIN.map(m => `<button type="button" class="tr-mchip ${yMets.includes(m) ? "on" : ""}" style="--c:${METRICS[m].c}" data-tr-ym="${m}" aria-pressed="${yMets.includes(m)}"><i></i>${esc(METRICS[m].t)}</button>`).join("")}</div>`;
-  const yearCmpSec = `<section class="tr-sec" id="tr-ycmp-sec"><div class="tr-sec-h"><h3>مقایسه شاخص‌ها در سال‌های مختلف <small>روی هم · حداکثر ۲ شاخص · ماه ۱ تا ۱۲</small></h3>
+  const yChips = `<div class="tr-mchips" role="group" aria-label="انتخاب یک شاخص برای مقایسه سال‌ها">${MAIN.map(m => `<button type="button" class="tr-mchip ${yMets.includes(m) ? "on" : ""}" style="--c:${METRICS[m].c}" data-tr-ym="${m}" aria-pressed="${yMets.includes(m)}"><i></i>${esc(METRICS[m].t)}</button>`).join("")}</div>`;
+  const yearCmpSec = `<section class="tr-sec" id="tr-ycmp-sec"><div class="tr-sec-h"><h3>مقایسه شاخص‌ها در سال‌های مختلف <small>یک شاخص · ماه ۱ تا ۱۲</small></h3>
     <p class="tr-sub">هر سال یک خط جدا با رنگ خودش؛ محور افقی ماه‌های سال است. سال‌های خاموش‌شده در دکمه‌های زیر نمودار اصلی اینجا هم اعمال می‌شوند.</p></div>
     <div class="tr-card">${yChips}${yCmpChart}${yrLeg}</div></section>`;
 
@@ -458,7 +464,7 @@ function bind(container){
   root.addEventListener("click", e => {
     const t = e.target;
     const yr = t.closest("[data-tr-year]"); if(yr && !yr.disabled){ const y = yr.dataset.trYear; if(ui.yearsOff.includes(y)) ui.yearsOff = ui.yearsOff.filter(x => x !== y); else ui.yearsOff = [...ui.yearsOff, y]; return rerender(); }
-    const ym = t.closest("[data-tr-ym]"); if(ym){ const m = ym.dataset.trYm; if(ui.yMetrics.includes(m)){ if(ui.yMetrics.length > 1) ui.yMetrics = ui.yMetrics.filter(x => x !== m); } else { ui.yMetrics = [...ui.yMetrics, m].slice(-2); } return rerender(); }
+    const ym = t.closest("[data-tr-ym]"); if(ym){ const m = ym.dataset.trYm; if(!ui.yMetrics.includes(m)) ui.yMetrics = [m]; return rerender(); }
     const mc = t.closest("[data-tr-m]"); if(mc){ const m = mc.dataset.trM; if(ui.metrics.includes(m)){ if(ui.metrics.length > 1) ui.metrics = ui.metrics.filter(x => x !== m); } else ui.metrics = [...ui.metrics, m]; return rerender(); }
     const sg = t.closest("[data-tr-seg]"); if(sg){ const k = sg.dataset.trSeg, v = sg.dataset.v; if(k === "h") ui.h = +v; else if(k === "revMode") ui.revMode = v; return rerender(); }
     const sc = t.closest("[data-tr-scope]"); if(sc){ const k = sc.dataset.trScope; if(k === "armed") ui.armed = nextOf(ARMED_ORDER, ui.armed); else ui.settlement = nextOf(SETTLEMENT_ORDER, ui.settlement); ui.openDrop = null; return rerender(); }
