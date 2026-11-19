@@ -37,6 +37,13 @@ const seg = (name, opts, cur, title) => `<div class="tr-seg" role="group" aria-l
 const tog = (name, label, on) => `<label class="tr-tog"><input type="checkbox" data-tr-tog="${name}" ${on ? "checked" : ""}><span>${label}</span></label>`;
 const AXIS = {money:"L", vol:"R", pct:"P"};
 const sum1 = (arr, a, b) => { let t = 0; for(let i = a; i <= b; i++) t += arr[i] || 0; return t; };
+/* زیرمجموعهٔ هر امور روی همان آرایهٔ فیلترشده فقط یک‌بار ساخته می‌شود. */
+const parSubsetMemo = new WeakMap();
+function byPar(recs, pid){
+  let cache = parSubsetMemo.get(recs); if(!cache) parSubsetMemo.set(recs, cache = new Map());
+  if(!cache.has(pid)) cache.set(pid, recs.filter(r => r.par === pid));
+  return cache.get(pid);
+}
 const dateFa = (y, m) => fa(y).replace(/٬/g, "") + "/" + fa(m).padStart(2, "۰");
 
 export function renderTrend({data, onSettings}){
@@ -246,7 +253,7 @@ export function renderTrend({data, onSettings}){
 
   /* ── ۳) مقایسهٔ شهرهای امور (انتخاب‌شده از فیلتر یا با کلیک روی نمودار امور) ── */
   const citySec = ui.pars.length ? ui.pars.map(pid => {
-    const par = model.pars.find(p => p.id === pid), grp = [...groupBy(recsScope.filter(r => r.par === pid), "city", M).values()].sort((x, y) => sum1(y.it.income, a, b) - sum1(x.it.income, a, b));
+    const par = model.pars.find(p => p.id === pid), grp = [...groupBy(byPar(recsScope, pid), "city", M).values()].sort((x, y) => sum1(y.it.income, a, b) - sum1(x.it.income, a, b));
     const cards = grp.map(g => smCard("sm-city-" + g.id, g.name, subOf(g), entSeries(g, `C|${scopeKey}|${g.id}`), {pick:"city:" + g.id, on:ui.cities.includes(g.id)})).join("");
     return `<section class="tr-sec" id="tr-city-sec"><div class="tr-sec-h"><h3>مقایسهٔ روند شهرها و بخش‌های امور ${esc(par.t.replace(/^امور\s*/, ""))} <small>${fa(grp.length)} مورد</small></h3>
       <p class="tr-sub">برای هر شهر/بخش یک نمودار جدا. با کلیک روی یک شهر، جزئیات درآمد (پایین صفحه) در سطح همان شهر و به تفکیک کاربری نشان داده می‌شود؛ کلیک دوباره انتخاب را برمی‌دارد.</p></div>
@@ -272,7 +279,7 @@ export function renderTrend({data, onSettings}){
     const partCards = PARTS.map(k => { const r = fcShow ? forecastMetric(it, k, model, H, fo(ckTop)) : null, ser = [mkSeries(k, it[k], r)]; return smCard("pt-" + k, METRICS[k].t, `<b>${fmt(k, it[k][b])}</b> ${esc(un.t)}`, ser, {h:190}); }).join("");
     /* جدول بر اساس سطح انتخابی: استان ← امورها · امور ← شهرها · شهر ← کاربری‌ها (همهٔ ماه‌ها) */
     let pool, dim, rowKind;
-    if(ui.cities.length){ pool = recs; dim = "bt"; rowKind = "کاربری"; } else if(ui.pars.length === 1){ pool = recsScope.filter(r => r.par === ui.pars[0]); dim = "city"; rowKind = "شهر/بخش"; }
+    if(ui.cities.length){ pool = recs; dim = "bt"; rowKind = "کاربری"; } else if(ui.pars.length === 1){ pool = byPar(recsScope, ui.pars[0]); dim = "city"; rowKind = "شهر/بخش"; }
     else if(ui.pars.length > 1){ pool = recsScope.filter(r => ui.pars.includes(r.par)); dim = "par"; rowKind = "امور"; } else { pool = recsScope; dim = "par"; rowKind = "امور"; }
     const mk = ui.revMeasure, mm = [["income", "درآمد خالص (جمع کل درآمد)"], ...PARTS.map(k => [k, METRICS[k].t])], mkT = mm.find(x => x[0] === mk)?.[1] || mm[0][1];
     const rows = [...groupBy(pool, dim, M).values()].map(g => ({name:dim === "par" ? nameOf(g) : g.name, arr:g.it[mk]})).sort((x, y) => y.arr.reduce((s, v) => s + v, 0) - x.arr.reduce((s, v) => s + v, 0));
