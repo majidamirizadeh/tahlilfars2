@@ -10,7 +10,9 @@ function openDb(){
 }
 const tx = (db, mode, fn) => new Promise(res => { try{ const t = db.transaction(DB_STORE, mode), rq = fn(t.objectStore(DB_STORE));
   t.oncomplete = () => res(rq?.result ?? true); t.onerror = t.onabort = () => res(null); }catch{ res(null); } });
-export async function getDataset(id){ const db = await openDb(); return db ? (await tx(db, "readonly", s => s.get(id))) || null : null; }
+export async function getDataset(id){ const db = await openDb(); const r = db ? await tx(db, "readonly", s => s.get(id)) : null; return r && r.datasetId ? r : null; }   // رکورد غایب → null (نه true)
 export async function putDataset(rec){ const db = await openDb(); return db ? !!(await tx(db, "readwrite", s => s.put({...rec, updatedAt: Date.now()}))) : false; }
 export async function deleteDataset(id){ const db = await openDb(); return db ? !!(await tx(db, "readwrite", s => s.delete(id))) : false; }
 export async function listDatasets(){ const db = await openDb(); return db ? (await tx(db, "readonly", s => s.getAll())) || [] : []; }
+/** پاک‌سازی کامل داده‌های کش‌شده (هنگام خروج/پایان نشست) */
+export async function clearAllDatasets(){ const db = await openDb(); return db ? !!(await tx(db, "readwrite", s => s.clear())) : false; }

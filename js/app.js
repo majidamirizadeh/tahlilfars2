@@ -1,4 +1,4 @@
-import {syncDataset,getCachedRecord} from "./data/dataLoader.js";
+import {syncDataset,getCachedRecord,fastReady} from "./data/dataLoader.js";
 import {DATASETS} from "./data/dataRegistry.js";
 import {setDatasetVersion} from "./core/datasetState.js";
 import {loadVendor} from "./core/vendor.js";
@@ -6,7 +6,7 @@ import {registerPWA} from "./core/pwa.js";
 import {uniqueSorted} from "./filters/filters.js";
 import {render as renderProvince} from "./dashboards/overview.js";
 import {renderMap} from "./dashboards/map.js";
-import {isLoggedIn, login, logout, isAdmin, getUser} from "./auth/auth.js";
+import {isLoggedIn, login, logout, isAdmin, getUser, hasSessionResidue, endSession, warmUp} from "./auth/auth.js";
 import {USE_SECURE_BACKEND} from "./core/constants.js";
 /* داشبوردهای سنگین (رتبه/مصرف/مالی/گزارش) فقط هنگام اولین ورود به تب Load می‌شوند */
 const VIEW_LOADERS={
@@ -41,7 +41,7 @@ let state={
   selectedAreas:[],   // multi-select areas from dropdown or map
   selectedUsages:[],  // multi-select usages
   settlement:"all",   // نوع سکونتگاه: all | city | rural (فیلتر چرخشی نوار بالا)
-  armedForces:"without", // نیروهای مسلح: with (عادی) | without | only (فیلتر چرخشی نوار بالا) — دیفالت بدون نیروی مسلح
+  armedForces:"without", // نیروهای مسلح: with (عادی) | without | only (فیلتر چرخشی نوار بالا) — دیفولت بدون نیروی مسلح
   selectedCities:[],  // فیلتر شهر/بخش — فقط وقتی دقیقاً یک امور فعال است
   datasetKey:""       // شناسهٔ دادهٔ فعال (hash|version)
 };
@@ -320,12 +320,20 @@ function showTrendError(msg){
   c.innerHTML=`<section class="card empty"><h3>بارگذاری داده‌های روند انجام نشد</h3><p>${esc(msg)}</p><p>فایل مورد انتظار: <b>${esc(DATASETS.trend.file.replace("./",""))}</b></p><p><button type="button" class="tr-set" id="trendRetry">تلاش دوباره</button></p></section>`;
   $("#trendRetry")?.addEventListener("click",()=>{trend.error="";rerenderTrend();});
 }
+/* مدیر: پس از تبدیل خودکار Excel، نتیجهٔ انتشار نسخهٔ سریع (فقط وقتی واقعاً انجام شد یا شکست خورد) اطلاع داده می‌شود */
+function reportPublish(p){
+  if(!p||typeof p.then!=="function")return;
+  p.then(r=>{
+    if(r?.ok) toast("نسخهٔ سریع داده ساخته و برای سایر کاربران منتشر شد.","ok",6000);
+    else if(r&&r.reason!=="skip") toast("ساخت نسخهٔ سریع داده انجام نشد؛ برنامه همچنان با خواندن مستقیم Excel کار می‌کند.","warn",9000);
+  });
+}
 async function syncTrend({user=false}={}){
   if(trend.syncing)return trend.syncing;
   trend.syncing=(async()=>{
     try{
       if(!trend.rec){ const c=await getCachedRecord("trend").catch(()=>null); if(c){ trend.rec=c; trend.key=(c.hash||"")+"|"+c.version; if(state.view==="trend"){ updateHeader(); rerenderTrend(); } } }
-      const res=await syncDataset("trend",{force:user}); trend.checked=true;
+      const res=await syncDataset("trend",{force:user}); trend.checked=true; reportPublish(res.publish);
       if(res.record){ const k=(res.record.hash||"")+"|"+res.record.version, changed=k!==trend.key; trend.rec=res.record; trend.key=k; if(changed&&state.view==="trend"){ updateHeader(); rerenderTrend(); } }
       if(res.status==="updated"&&user) toast("داده جدید روند دریافت و اعمال شد.","ok",5000);
       else if(res.status==="unchanged"&&user) toast("داده روند تغییری نکرده است.","ok");
@@ -452,6 +460,7 @@ async function syncData({user=false}={}){
   try{
     const hadData=state.loaded;
     const res=await syncDataset("main",{force:user});
+    reportPublish(res.publish);
     const warn=res.warnings?.length?" ⚠ "+res.warnings[0]:"";
     if(res.record) applyRecord(res.record);
     switch(res.status){
@@ -482,6 +491,14 @@ async function boot(){
   if(cached) applyRecord(cached);
   lucideReady.then(()=>window.lucide&&lucide.createIcons());
   await syncData({user:false});
+  prefetchTrend();
+}
+/* تب «روند» را در زمان بیکاریِ مرورگر آماده می‌کند تا هنگام ورود به آن، دادهٔ آماده باشد.
+   فقط وقتی که نسخهٔ فشردهٔ تازه روی سرور هست (دانلود کوچک) یا کاربر مدیر است (تبدیل خودکار Excel)؛ برای بقیه، Excel سنگین بی‌دلیل دانلود نمی‌شود. */
+function prefetchTrend(){
+  if(trend.rec||trend.syncing||trend.checked)return;
+  const run=async()=>{ try{ if(trend.rec||trend.syncing||trend.checked)return; if(isAdmin()||await fastReady("trend")) syncTrend(); }catch(e){ console.warn("prefetch trend",e); } };
+  if(window.requestIdleCallback) requestIdleCallback(run,{timeout:4000}); else setTimeout(run,1500);
 }
 
 // Mode tabs (فقط صفحه هوم؛ در تب تحلیل مخفی است)
@@ -609,6 +626,8 @@ $("#citySubClearBtn")?.addEventListener("click",()=>{
   rerenderHome();
 });
 
+$("#logoutBtn")?.addEventListener("click",async()=>{ const b=$("#logoutBtn"); if(b)b.disabled=true; try{ await logout(); }finally{ location.reload(); } });
+window.addEventListener("tf-session-ended",()=>location.reload());   // نشست منقضی/باطل شد: داده کش‌شده پاک شده و صفحهٔ ورود نمایش داده می‌شود
 $("#refreshBtn").addEventListener("click",()=>{ if(state.view==="trend") return void syncTrend({user:true}); state.loaded?syncData({user:true}):boot(); });   // همان کلید «به‌روزرسانی» موجود
 
 $$('.ribbon-item').forEach(b=>{
@@ -670,6 +689,7 @@ function showLogin() {
     };
   }
   if (window.lucide) lucide.createIcons();
+  warmUp();   // Apps Script همین حالا بیدار می‌شود تا ورود کند نباشد
   form.onsubmit = async (ev) => {
     ev.preventDefault();
     errEl.hidden = true;
@@ -694,6 +714,7 @@ if (USE_SECURE_BACKEND) {
   if (isLoggedIn()) {
     showApp();
   } else {
+    if (hasSessionResidue()) endSession("expired", { notify: false });   // نشست محلیِ منقضی: توکن و داده کش‌شده پاک شود
     showLogin();
   }
 } else {
