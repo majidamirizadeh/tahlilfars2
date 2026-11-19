@@ -480,7 +480,7 @@ function bind(container){
     if(t.closest("[data-tr-settings]")) return ctxNow?.onSettings?.();
   });
   root.addEventListener("keydown", e => { const cd = e.target.closest?.("[data-tr-card]"); if(cd && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); selectCard(cd.dataset.trCard); } });
-  root.addEventListener("toggle", e => { const d = e.target; const k = d?.dataset?.pk; if(!k || ui.pickOpen[k] === d.open) return; ui.pickOpen[k] = d.open; if(k === "rev") rerender(); }, true);
+  root.addEventListener("toggle", e => { const d = e.target; const k = d?.dataset?.pk; if(!k || ui.pickOpen[k] === d.open) return; ui.pickOpen[k] = d.open; if(k === "rev" || k === "bt" || k === "ins") rerender(); }, true);
   root.addEventListener("dblclick", e => { if(e.target.closest(".tc-hit[data-hit]")){ const sp = specs.get(e.target.closest("[data-chart]")?.dataset.chart); if(sp?.zoom){ ui.a = 0; ui.b = null; hideTip(); rerender(); } } });
   root.addEventListener("pointerdown", e => { rangeDown(e); brushStart(e); });
   root.addEventListener("pointermove", e => { if(drag){ return; } if(!tsHover(e)) showTip(e); });
