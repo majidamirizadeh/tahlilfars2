@@ -156,7 +156,7 @@ export function renderTrend({data, onSettings}){
       if(!isFc){
         const gi = keepIdx[i], v = s.rawFull ? s.rawFull[gi] : s.raw[i];
         const prev = gi > 0 && s.ent ? s.ent[a + gi - 1] : null;
-        rows.push([s.name, `${fmt(s.m, v)} ${u}${delta(s.m, v, prev)}${s.out?.includes(gi) ? " — نقطهٔ پرت" : ""}`, s.color]);
+        rows.push([s.name, `${fmt(s.m, v)} ${u}${delta(s.m, v, prev)}${(s.outFull || s.out)?.includes(gi) ? " — نقطهٔ پرت" : ""}`, s.color]);
         if(!isR && s.ent) rows.push(["جمع از ابتدای سال", `${fmt(s.m, cumUntil(s.ent, gi))} ${u}`]);
       } else if(s.rraw){
         rows.push([s.name + " (پیش‌بینی)", `${fmt(s.m, s.rraw.fc[j])} ${u}`, s.color]);
@@ -177,6 +177,7 @@ export function renderTrend({data, onSettings}){
   const combS = mets.map(m => {
     const s = mkSeries(m, it[m], res[m], {out:mets.length === 1});
     s.rawFull = s.raw;
+    s.outFull = s.out;
     s.act = pack(s.act);
     s.raw = pack(s.raw);
     s.out = (s.out || []).map(gi => keepIdx.indexOf(gi)).filter(x => x >= 0);
@@ -227,7 +228,7 @@ export function renderTrend({data, onSettings}){
   const smCard = (cid, title, sub, ser, {pick, on, h = 215} = {}) => {
     /* همان فیلتر سال نمودار اصلی، روی تمام کارت‌های مقایسه و اجزای درآمد */
     const actualIdx = keepIdx.filter(i => i < nAct);
-    const visibleSeries = ser.map(s => ({...s, rawFull:s.raw, act:actualIdx.map(i => s.act[i] ?? null),
+    const visibleSeries = ser.map(s => ({...s, rawFull:s.raw, outFull:s.out || [], act:actualIdx.map(i => s.act[i] ?? null),
       raw:actualIdx.map(i => s.raw[i] ?? null), out:(s.out || []).map(gi => actualIdx.indexOf(gi)).filter(i => i >= 0)}));
     const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, series:visibleSeries, band:false, anim:false, zoom:false, pick:!!pick, aria:title, tip:tipForVis(visibleSeries)});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
