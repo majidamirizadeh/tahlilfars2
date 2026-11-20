@@ -177,40 +177,57 @@ export function spark(values, {w = 96, h = 26, color = "#25406A", fcFrom = null,
 
 const DRAW = {ts, bars, donut};
 export const specs = new Map();
-export function paint(slot, replay){
+/* سری‌ها و tooltip کارت‌ها می‌توانند تابع build داشته باشند؛ محاسبهٔ سنگین (پیش‌بینی) فقط هنگام رسم همان نمودار اجرا می‌شود. */
+function resolveSpec(sp){ if(sp.build){ const b = sp.build; sp.build = null; Object.assign(sp, b()); } }
+export function paint(slot, replay, width){
   const sp = specs.get(slot.dataset.chart); if(!sp) return;
-  const W = Math.max(260, Math.floor(slot.clientWidth || 600));
+  const W = Math.max(260, Math.floor(width ?? (slot.clientWidth || 600)));
   const animate = !!sp.anim && !sp._painted && motionOK() || (replay && sp.anim && motionOK());
-  try{ slot.innerHTML = DRAW[sp.type](sp, W, animate); slot.dataset.w = W; sp._painted = true; }catch(e){ console.error("chart", sp.type, e); slot.innerHTML = `<div class="tc-empty">نمودار رسم نشد.</div>`; }
+  try{ resolveSpec(sp); slot.innerHTML = DRAW[sp.type](sp, W, animate); slot.dataset.w = W; sp._painted = true; }catch(e){ console.error("chart", sp.type, e); slot.innerHTML = `<div class="tc-empty">نمودار رسم نشد.</div>`; }
+  slot.removeAttribute("data-pending");
 }
-/* نمودارهای خارج از محدودهٔ دید فوراً رسم نمی‌شوند؛ هنگام نزدیک‌شدن به viewport رسم خواهند شد. */
-let chartObserver = null;
+/* رسم مرحله‌ای: نمودارهای زیر صفحه یکی‌یکی و در فریم‌های جدا رسم می‌شوند تا صفحه قفل نشود. */
+const queue = []; let pumping = false;
+function pump(){
+  pumping = false; const t0 = performance.now();
+  while(queue.length){
+    const el = queue.shift(); el._tcq = false;
+    if(el.isConnected && el.hasAttribute("data-pending")) paint(el);
+    if(performance.now() - t0 > 10) break;
+  }
+  if(queue.length){ pumping = true; requestAnimationFrame(pump); }
+}
+function enqueue(el){ if(el._tcq) return; el._tcq = true; queue.push(el); if(!pumping){ pumping = true; requestAnimationFrame(pump); } }
+let chartObserver = null, printBound = false;
 function ensureChartObserver(){
+  if(!printBound){ printBound = true; window.addEventListener("beforeprint", () => document.querySelectorAll("[data-chart][data-pending]").forEach(el => paint(el))); }
   if(chartObserver || !("IntersectionObserver" in window)) return;
   chartObserver = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       const el = entry.target;
       if(!el.isConnected){ chartObserver.unobserve(el); return; }
-      if(entry.isIntersecting){ chartObserver.unobserve(el); paint(el); }
+      if(entry.isIntersecting){ chartObserver.unobserve(el); enqueue(el); }
     });
   }, {root:null, rootMargin:"500px 0px", threshold:0});
 }
 export function paintAll(root, onlyChanged = false){
   const slots = [...root.querySelectorAll("[data-chart]")];
-  if(!("IntersectionObserver" in window)){ slots.forEach(el => {
-    const w = Math.max(260, Math.floor(el.clientWidth || 600));
-    if(!onlyChanged || !el.querySelector("svg") || +el.dataset.w !== w) paint(el);
-  }); return; }
-  ensureChartObserver();
-  slots.forEach(el => {
-    const w = Math.max(260, Math.floor(el.clientWidth || 600)), hasSvg = !!el.querySelector("svg");
+  /* ۱) همهٔ اندازه‌گیری‌ها یک‌جا (یک layout)، ۲) سپس نوشتن؛ خواندن و نوشتن مخلوط هر بار layout اجباری می‌ساخت. */
+  const vh = window.innerHeight || 700;
+  const info = slots.map(el => { const r = el.getBoundingClientRect(); return {el, w:Math.max(260, Math.floor(el.clientWidth || 600)), shown:el.getClientRects().length > 0, top:r.top, bottom:r.bottom, hasSvg:!!el.querySelector("svg")}; });
+  if(!onlyChanged){ queue.length = 0; chartObserver?.disconnect(); }
+  const hasIO = "IntersectionObserver" in window; if(hasIO) ensureChartObserver();
+  info.forEach(({el, w, shown, top, bottom, hasSvg}) => {
     if(onlyChanged && hasSvg && +el.dataset.w === w) return;
-    const r = el.getBoundingClientRect(), near = r.bottom >= -500 && r.top <= (window.innerHeight || 700) + 500;
-    if(near) paint(el); else chartObserver.observe(el);
+    if(!hasIO){ paint(el, false, w); return; }
+    if(!shown){ chartObserver.observe(el); return; }               /* داخل بخش بسته: هنگام بازشدن رسم می‌شود */
+    if(top < vh && bottom > 0) paint(el, false, w);                 /* داخل دید: همین حالا */
+    else if(bottom >= -500 && top <= vh + 500) enqueue(el);         /* نزدیک دید: در فریم‌های بعدی */
+    else chartObserver.observe(el);                                 /* دور: هنگام نزدیک‌شدن */
   });
 }
-/** کادر جای‌نگهدار نمودار؛ spec در رجیستری ذخیره می‌شود */
-export function slot(id, spec, cls = ""){ specs.set(id, {...spec, id}); return `<div class="tc-slot ${cls}" data-chart="${esc(id)}"></div>`; }
+/** کادر جای‌نگهدار نمودار؛ spec در رجیستری ذخیره می‌شود. تا رسم‌شدن، ارتفاع همان نمودار رزرو است (بدون پرش صفحه). */
+export function slot(id, spec, cls = ""){ specs.set(id, {...spec, id}); const h = spec.height || (spec.compact ? 210 : 320); return `<div class="tc-slot ${cls}" data-chart="${esc(id)}" data-pending style="min-height:${h}px"></div>`; }
 /** اندیس نزدیک‌ترین ماه برای مختصات اشاره‌گر (clientX) روی یک نمودار ts؛ null اگر هندسه نیست */
 export function indexAt(slotEl, sp, clientX){
   const svg = slotEl.querySelector("svg"), g = sp.geo; if(!svg || !g) return null;

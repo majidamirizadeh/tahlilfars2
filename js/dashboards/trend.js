@@ -12,7 +12,7 @@ import {slot, paint, paintAll, specs, spark, indexAt, xOf, yearColor} from "./tr
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 const ui = {armed:"without", settlement:"all", pars:[], cities:[], bts:[], a:0, b:null, metrics:["consumption", "income", "collection"], method:"auto", h:null, unit:"brial", vunit:"km3", fcOn:true, bandOn:null,
   pickOpen:{}, openDrop:null, revMode:"num", revMeasure:"income", yearsOff:[], yMetrics:["consumption"]};
-let ctxNow = null, bound = false, resizeObs = null, tipEl = null, drag = null, lastTable = null;
+let docsLazy = null, ctxNow = null, bound = false, resizeObs = null, tipEl = null, drag = null, lastTable = null;
 const sel = k => new Set(ui[k]);
 const toggleIn = (arr, v) => { const i = arr.indexOf(v); i >= 0 ? arr.splice(i, 1) : arr.push(v); };
 function sanitize(model){
@@ -48,6 +48,7 @@ const dateFa = (y, m) => fa(y).replace(/٬/g, "") + "/" + fa(m).padStart(2, "۰"
 
 export function renderTrend({data, onSettings}){
   const container = document.getElementById("viewContainer"); if(!container) return;
+  rrToken++; clearTimeout(pickTimer); rrAfter.length = 0;      /* هر رندر تازه، رندرهای در صف را بی‌اثر می‌کند */
   document.querySelectorAll("body > [data-tr-panel]").forEach(el => el.remove());
   const model = prepare(data), M = model.months.length; sanitize(model); specs.clear();
   ctxNow = {data, onSettings};
@@ -63,7 +64,7 @@ export function renderTrend({data, onSettings}){
   const recs = filterRecs(model, {armed:ui.armed, settlement:ui.settlement, pars:sel("pars"), cities:sel("cities"), bts:sel("bts")});
   const recsScope = filterRecs(model, {armed:ui.armed, settlement:ui.settlement, bts:sel("bts")});   /* مقایسه‌ها: مستقل از انتخاب امور/شهر */
   const it = sumItems(recs, M), scopeKey = [ui.armed, ui.settlement, ui.bts.join(",")].join("~"), ckTop = "T|" + scopeKey + "|" + ui.pars.join(",") + "|" + ui.cities.join(",");
-  const fo = ck => ({method:ui.method, a, b, ck});
+  const methodNow = ui.method, fo = ck => ({method:methodNow, a, b, ck});
 
   /* ── کنترل‌ها ── */
   const parPanel = `<div class="dropdown-list">${model.pars.map(p => `<button type="button" class="dropdown-item ${ui.pars.includes(p.id) ? "selected" : ""}" data-tr-pick="par" data-v="${esc(p.id)}">${esc(p.t.replace(/^امور\s*/, ""))}</button>`).join("")}</div>`;
@@ -234,10 +235,11 @@ export function renderTrend({data, onSettings}){
   const relBanner = relAll.level !== "ok" ? `<div class="tr-warn ${relAll.level === "none" ? "tr-warn-crit" : ""}" role="note"><b>${relAll.level === "none" ? "پیش‌بینی‌ها قابل اتکا نیستند." : "اتکای پیش‌بینی‌ها محدود است."}</b> ${esc(relAll.msg)}</div>` : "";
 
   /* ── کارت نمودار کوچک (نمودار جدا برای هر امور/شهر/جزء) ── */
+  /* ser می‌تواند تابع باشد: پیش‌بینی و ساخت سری‌ها تا لحظهٔ رسم همان نمودار به تعویق می‌افتد، پس کارت‌های دور از دید اصلاً محاسبه نمی‌شوند. */
   const smCard = (cid, title, sub, ser, {pick, on, h = 215} = {}) => {
     /* همه کارت‌ها دقیقاً همان سال‌های روشن نمودار اصلی را نمایش می‌دهند؛ افق پیش‌بینی حفظ می‌شود. */
-    const visSer = ser.map(s => ({...s, rawFull:s.raw, act:pack(s.act), raw:pack(s.raw), out:(s.out || []).map(i => keepIdx.indexOf(i)).filter(i => i >= 0)}));
-    const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, series:visSer, band:false, anim:false, zoom:false, pick:!!pick, aria:title, tip:tipForVis(visSer)});
+    const build = () => { const visSer = (typeof ser === "function" ? ser() : ser).map(s => ({...s, rawFull:s.raw, act:pack(s.act), raw:pack(s.raw), out:(s.out || []).map(i => keepIdx.indexOf(i)).filter(i => i >= 0)})); return {series:visSer, tip:tipForVis(visSer)}; };
+    const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, band:false, anim:false, zoom:false, pick:!!pick, aria:title, build});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
   const entSeries = (g, ck, withForecast = true) => mets.map(m => mkSeries(m, g.it[m], fcShow && withForecast ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
   const subOf = g => `${esc(METRICS[mets[0]].t)}: <b>${fmt(mets[0], g.it[mets[0]][b])}</b> ${esc(unit(mets[0]))}`;
@@ -245,7 +247,7 @@ export function renderTrend({data, onSettings}){
 
   /* ── ۲) مقایسهٔ امورها: نمودارهای جدا، کنار هم ── */
   const parGroups = [...groupBy(recsScope, "par", M).values()].sort((x, y) => sum1(y.it.income, a, b) - sum1(x.it.income, a, b));
-  const parCards = parGroups.map(g => smCard("sm-par-" + g.id, nameOf(g), subOf(g), entSeries(g, `P|${scopeKey}|${g.id}`), {pick:"par:" + g.id, on:ui.pars.length === 1 && ui.pars[0] === g.id})).join("");
+  const parCards = ui.pars.length ? "" : parGroups.map(g => smCard("sm-par-" + g.id, nameOf(g), subOf(g), () => entSeries(g, `P|${scopeKey}|${g.id}`), {pick:"par:" + g.id, on:false})).join("");
   /* وقتی امور انتخاب شده، مقایسهٔ همهٔ امور جمع می‌شود و فقط شهرهای همان امور نمایش داده می‌شود */
   const parSec = ui.pars.length ? "" : `<section class="tr-sec" id="tr-par-sec"><div class="tr-sec-h"><h3>مقایسهٔ روند همهٔ امورها <small>${fa(parGroups.length)} امور · نمودار جدا برای هر امور</small></h3>
     <p class="tr-sub">هر کارت روند همان شاخص‌های انتخابی بالا (با پیش‌بینی) را برای یک امور نشان می‌دهد و مقیاس محور هر کارت مستقل است؛ امورها بر اساس درآمد خالص بازهٔ نمایش مرتب شده‌اند. با کلیک روی هر نمودار، همان امور انتخاب می‌شود و مقایسهٔ شهرهای آن زیر همین بخش باز می‌شود. نیروی مسلح، شهر/روستا و کاربری اعمال می‌شود.</p></div>
@@ -254,7 +256,7 @@ export function renderTrend({data, onSettings}){
   /* ── ۳) مقایسهٔ شهرهای امور (انتخاب‌شده از فیلتر یا با کلیک روی نمودار امور) ── */
   const citySec = ui.pars.length ? ui.pars.map(pid => {
     const par = model.pars.find(p => p.id === pid), grp = [...groupBy(byPar(recsScope, pid), "city", M).values()].sort((x, y) => sum1(y.it.income, a, b) - sum1(x.it.income, a, b));
-    const cards = grp.map(g => smCard("sm-city-" + g.id, g.name, subOf(g), entSeries(g, `C|${scopeKey}|${g.id}`), {pick:"city:" + g.id, on:ui.cities.includes(g.id)})).join("");
+    const cards = grp.map(g => smCard("sm-city-" + g.id, g.name, subOf(g), () => entSeries(g, `C|${scopeKey}|${g.id}`), {pick:"city:" + g.id, on:ui.cities.includes(g.id)})).join("");
     return `<section class="tr-sec" id="tr-city-sec"><div class="tr-sec-h"><h3>مقایسهٔ روند شهرها و بخش‌های امور ${esc(par.t.replace(/^امور\s*/, ""))} <small>${fa(grp.length)} مورد</small></h3>
       <p class="tr-sub">برای هر شهر/بخش یک نمودار جدا. با کلیک روی یک شهر، جزئیات درآمد (پایین صفحه) در سطح همان شهر و به تفکیک کاربری نشان داده می‌شود؛ کلیک دوباره انتخاب را برمی‌دارد.</p></div>
       ${cards ? `<div class="tr-sm">${cards}</div>` : `<div class="tr-card"><p class="tr-hint">برای این امور با فیلتر فعلی شهر/بخشی نیست.</p></div>`}</section>`; }).join("")
@@ -276,7 +278,7 @@ export function renderTrend({data, onSettings}){
     const dTot = partSer.map(s => ({...s, v:s.raw.reduce((x, y) => x + y, 0)})), dSum = dTot.reduce((t, s) => t + Math.max(0, s.v), 0);
     const donutChart = slot("donut", {type:"donut", height:270, anim, aria:"سهم اجزای درآمد", items:dTot.map(s => ({id:s.id, value:s.v, color:s.color, tip:`${s.name}: ${fa(scale("income", s.v), 1)} ${un.t} (${fa(dSum ? s.v/dSum*100 : 0, 1)}٪)`})), center:{t1:fa(scale("income", dSum), 0), t2:un.t}});
     const dLeg = `<ul class="tr-dleg">${dTot.map(s => `<li style="--c:${s.color}"><i></i><span>${esc(s.name)}</span><b>${fa(scale("income", s.v), 1)}</b><em>${fa(dSum ? s.v/dSum*100 : 0, 1)}٪</em></li>`).join("")}</ul>`;
-    const partCards = PARTS.map(k => { const r = fcShow ? forecastMetric(it, k, model, H, fo(ckTop)) : null, ser = [mkSeries(k, it[k], r)]; return smCard("pt-" + k, METRICS[k].t, `<b>${fmt(k, it[k][b])}</b> ${esc(un.t)}`, ser, {h:190}); }).join("");
+    const partCards = PARTS.map(k => smCard("pt-" + k, METRICS[k].t, `<b>${fmt(k, it[k][b])}</b> ${esc(un.t)}`, () => [mkSeries(k, it[k], fcShow ? forecastMetric(it, k, model, H, fo(ckTop)) : null)], {h:190})).join("");
     /* جدول بر اساس سطح انتخابی: استان ← امورها · امور ← شهرها · شهر ← کاربری‌ها (همهٔ ماه‌ها) */
     let pool, dim, rowKind;
     if(ui.cities.length){ pool = recs; dim = "bt"; rowKind = "کاربری"; } else if(ui.pars.length === 1){ pool = byPar(recsScope, ui.pars[0]); dim = "city"; rowKind = "شهر/بخش"; }
@@ -335,11 +337,11 @@ export function renderTrend({data, onSettings}){
 
   /* ── مقایسه کاربری‌ها (پیش‌فرض جمع‌شده) ── */
   const btGroups = [...groupBy(recs, "bt", M).values()].sort((x, y) => sum1(y.it.income, a, b) - sum1(x.it.income, a, b));
-  /* جزئیات کاربری پیش‌فرض بسته است؛ تا زمان بازشدن، مدل‌های پیش‌بینی این کارت‌ها اجرا نمی‌شوند. */
-  const btCards = btGroups.map(g => smCard("sm-bt-" + g.id, g.name, subOf(g), entSeries(g, `B|${scopeKey}|${g.id}`, ui.pickOpen.bt), {h: 200})).join("");
+  /* جزئیات کاربری پیش‌فرض بسته است؛ تا زمان بازشدن، نه کارتی ساخته می‌شود و نه پیش‌بینی‌ای اجرا. */
+  const btCards = ui.pickOpen.bt ? btGroups.map(g => smCard("sm-bt-" + g.id, g.name, subOf(g), () => entSeries(g, `B|${scopeKey}|${g.id}`), {h: 200})).join("") : "";
   const btSec = `<details class="tr-revd" data-pk="bt" ${ui.pickOpen.bt ? "open" : ""}><summary>مقایسه کاربری‌ها <small>${fa(btGroups.length)} کاربری · پیش‌فرض جمع‌شده · با فیلتر سال/امور/شهر هماهنگ</small></summary>
     <div class="tr-sec"><p class="tr-sub">هر کارت روند شاخص‌های انتخابی را برای یک کاربری نشان می‌دهد. با تغییر فیلتر امور، شهر یا سال، این بخش هم به‌روز می‌شود.</p>
-    ${btCards ? `<div class="tr-sm">${btCards}</div>` : `<div class="tr-card"><p class="tr-hint">کاربری‌ای در این محدوده نیست.</p></div>`}</div></details>`;
+    ${!ui.pickOpen.bt ? "" : btCards ? `<div class="tr-sm">${btCards}</div>` : `<div class="tr-card"><p class="tr-hint">کاربری‌ای در این محدوده نیست.</p></div>`}</div></details>`;
 
   /* ── برداشت‌های توصیفی (فقط از خروجی مدل) ── */
   /* برداشت‌های تفصیلی امور فقط وقتی پنل آن باز است به پیش‌بینی تک‌تک امور نیاز دارد. */
@@ -349,6 +351,12 @@ export function renderTrend({data, onSettings}){
   const insHtml = `<ul class="tr-ins">${ins.map(x => `<li class="tr-t-${x.tone}"><i>${SEV[x.tone] || "ℹ"}</i><span>${x.html}</span></li>`).join("")}</ul>`;
   const dq = dataQuality(model), dqHtml = dq.length ? `<ul class="tr-dq">${dq.map(x => `<li class="tr-dq-${x.sev}"><i>${SEV[x.sev] || "ℹ"}</i>${esc(x.t)}</li>`).join("")}</ul>` : `<p class="tr-hint">✔ مورد مشکوکی یافت نشد.</p>`;
   const mDoc = mets[0], rM = res[mDoc];
+  /* مستندات فقط هنگام بازشدن ساخته می‌شود و درجا اضافه می‌شود (بدون رندر دوبارهٔ کل تب و تکرار انیمیشن نمودارها). */
+  const docsBody = () => `
+      <h4>ارزیابی مدل‌ها روی داده فعلی (${esc(METRICS[mDoc].t)})</h4>${evalTableHtml(rM.eval, rM.method, METRICS[mDoc].t, {div:kd(mDoc) === "money" ? un.d : kd(mDoc) === "vol" ? vu.d : 1, unit:unit(mDoc)})}
+      ${docsHtml()}
+      <h4>کیفیت داده</h4>${dqHtml}`;
+  docsLazy = docsBody;
   const insSec = `<details class="tr-revd" data-pk="ins" ${ui.pickOpen.ins ? "open" : ""}><summary>برداشت‌های پیش‌بینی <small>فقط بر اساس خروجی مدل</small></summary>
     <div class="tr-card">${ins.length ? insHtml : `<p class="tr-hint">پیش‌بینی‌ای برای برداشت وجود ندارد.</p>`}</div></details>`;
 
@@ -361,10 +369,7 @@ export function renderTrend({data, onSettings}){
     ${btSec}
     ${revSec}
     ${insSec}
-    <details class="tr-help tr-docs"><summary>روش‌های پیش‌بینی، مبانی علمی و نحوه محاسبه</summary>
-      <h4>ارزیابی مدل‌ها روی داده فعلی (${esc(METRICS[mDoc].t)})</h4>${evalTableHtml(rM.eval, rM.method, METRICS[mDoc].t, {div:kd(mDoc) === "money" ? un.d : kd(mDoc) === "vol" ? vu.d : 1, unit:unit(mDoc)})}
-      ${docsHtml()}
-      <h4>کیفیت داده</h4>${dqHtml}</details>
+    <details class="tr-help tr-docs" data-pk="docs" ${ui.pickOpen.docs ? "open" : ""}><summary>روش‌های پیش‌بینی، مبانی علمی و نحوه محاسبه</summary>${ui.pickOpen.docs ? docsBody() : ""}</details>
   </div>`;
   bind(container); finish(container);
 }
@@ -378,7 +383,16 @@ function finish(container){
 }
 
 /* ───── تعامل ───── */
-const rerender = () => { if(!ctxNow) return; const y = window.scrollY; renderTrend(ctxNow); window.scrollTo(0, y); };
+/* رندر یک فریم بعد انجام می‌شود تا نشانگر «در حال به‌روزرسانی» اول دیده شود؛ رندرهای پشت‌سرهم یکی می‌شوند و کارهای پس از رندر (after) بعد از آخرین رندر اجرا می‌شوند. */
+let rrToken = 0, pickTimer = 0; const rrAfter = [];
+const rerender = after => {
+  if(!ctxNow) return; if(after) rrAfter.push(after);
+  const y = window.scrollY, tok = ++rrToken; document.querySelector(".tr-root")?.classList.add("tr-busy");
+  requestAnimationFrame(() => setTimeout(() => {
+    if(tok !== rrToken || !ctxNow) return;
+    const todo = rrAfter.splice(0); renderTrend(ctxNow); window.scrollTo(0, y); todo.forEach(fn => { try{ fn(); }catch(e){ console.error(e); } });
+  }, 0));
+};
 function setDrop(root, kind){
   const wasOpen = ui.openDrop === kind; ui.openDrop = wasOpen ? null : kind;
   document.querySelectorAll("body > [data-tr-panel]").forEach(el => el.classList.add("hidden"));
@@ -458,7 +472,7 @@ function rangeMove(e){
 function rangeEnd(){ const d = drag; drag = null; if(!d || d.type !== "range") return; if(d.a !== ui.a || d.b !== ui.b){ ui.a = d.a; ui.b = d.b; rerender(); } }
 function selectCard(spec){
   const [kind, id] = spec.split(":");
-  if(kind === "par"){ const was = ui.pars.length === 1 && ui.pars[0] === id; ui.pars = was ? [] : [id]; ui.cities = []; rerender(); if(!was) setTimeout(() => document.getElementById("tr-city-sec")?.scrollIntoView({behavior:"smooth", block:"start"}), 30); }
+  if(kind === "par"){ const was = ui.pars.length === 1 && ui.pars[0] === id; ui.pars = was ? [] : [id]; ui.cities = []; rerender(was ? null : () => document.getElementById("tr-city-sec")?.scrollIntoView({behavior:"smooth", block:"start"})); }
   else { ui.cities = ui.cities.length === 1 && ui.cities[0] === id ? [] : [id]; rerender(); }
 }
 function bind(container){
@@ -487,7 +501,7 @@ function bind(container){
     if(t.closest("[data-tr-settings]")) return ctxNow?.onSettings?.();
   });
   root.addEventListener("keydown", e => { const cd = e.target.closest?.("[data-tr-card]"); if(cd && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); selectCard(cd.dataset.trCard); } });
-  root.addEventListener("toggle", e => { const d = e.target; const k = d?.dataset?.pk; if(!k || ui.pickOpen[k] === d.open) return; ui.pickOpen[k] = d.open; if(k === "rev" || k === "bt" || k === "ins") rerender(); }, true);
+  root.addEventListener("toggle", e => { const d = e.target; const k = d?.dataset?.pk; if(!k || ui.pickOpen[k] === d.open) return; ui.pickOpen[k] = d.open; if(k === "docs"){ if(d.open && docsLazy && !d.querySelector("h4")) d.insertAdjacentHTML("beforeend", docsLazy()); return; } if(k === "rev" || k === "bt" || k === "ins") rerender(); }, true);
   root.addEventListener("dblclick", e => { if(e.target.closest(".tc-hit[data-hit]")){ const sp = specs.get(e.target.closest("[data-chart]")?.dataset.chart); if(sp?.zoom){ ui.a = 0; ui.b = null; hideTip(); rerender(); } } });
   root.addEventListener("pointerdown", e => { rangeDown(e); brushStart(e); });
   root.addEventListener("pointermove", e => { if(drag){ return; } if(!tsHover(e)) showTip(e); });
@@ -499,7 +513,7 @@ function bind(container){
     const h = e.target.closest?.(".tr-rh"); if(!h) return; const box = h.closest("[data-tr-range]"), M = +box.dataset.m, rtl = S("trend.rtl"); let a = +box.dataset.a, b = +box.dataset.b;
     const dir = ({ArrowLeft:rtl ? 1 : -1, ArrowRight:rtl ? -1 : 1, ArrowUp:1, ArrowDown:-1})[e.key], k = h.dataset.h; if(!dir && e.key !== "Home" && e.key !== "End") return; e.preventDefault();
     let v = k === "a" ? a : b; v = e.key === "Home" ? 0 : e.key === "End" ? M - 1 : v + dir; v = Math.max(0, Math.min(M - 1, v));
-    if(k === "a") a = Math.min(v, b); else b = Math.max(v, a); ui.a = a; ui.b = b; rerender(); setTimeout(() => document.querySelector(`.tr-rh[data-h="${k}"]`)?.focus(), 0);
+    if(k === "a") a = Math.min(v, b); else b = Math.max(v, a); ui.a = a; ui.b = b; rerender(() => document.querySelector(`.tr-rh[data-h="${k}"]`)?.focus());
   });
   if(bound) return; bound = true;
   document.addEventListener("pointermove", e => { if(!drag || !document.body.classList.contains("trend-view")) return; rangeMove(e) || brushMove(e); });
@@ -508,9 +522,13 @@ function bind(container){
   document.addEventListener("click", e => {
     if(!document.body.classList.contains("trend-view") || !ctxNow) return;
     const pk = e.target.closest("[data-tr-pick]");
-    if(pk){ e.stopPropagation(); const k = pk.dataset.trPick, v = pk.dataset.v; if(k === "par"){ toggleIn(ui.pars, v); ui.cities = []; } else toggleIn(ui.bts, v); const keep = ui.openDrop; rerender(); if(keep){ const r = document.querySelector(".tr-root"); if(r){ ui.openDrop = null; setDrop(r, keep); } } return; }
+    if(pk){ e.stopPropagation(); const k = pk.dataset.trPick, v = pk.dataset.v; if(k === "par"){ toggleIn(ui.pars, v); ui.cities = []; } else toggleIn(ui.bts, v);
+      /* انتخاب چندتایی: ظاهر دکمه فوراً عوض می‌شود و رندر سنگین بعد از ۲۵۰ms سکون یک‌بار انجام می‌شود */
+      pk.classList.toggle("selected", (k === "par" ? ui.pars : ui.bts).includes(v));
+      document.querySelector(".tr-root")?.classList.add("tr-busy"); clearTimeout(pickTimer);
+      pickTimer = setTimeout(() => { const keep = ui.openDrop; rerender(() => { if(keep){ const r = document.querySelector(".tr-root"); if(r){ ui.openDrop = null; setDrop(r, keep); } } }); }, 250); return; }
     if(!e.target.closest("[data-tr-panel],[data-tr-toggle]") && ui.openDrop){ ui.openDrop = null; document.querySelectorAll("[data-tr-panel]").forEach(p => p.classList.add("hidden")); document.querySelectorAll("[data-tr-toggle]").forEach(b => { b.classList.remove("open"); b.setAttribute("aria-expanded", "false"); }); }
     if(!e.target.closest("[data-tip],.tc-hit") && tipEl) tipEl.hidden = true;
   });
 }
-export function leaveTrend(){ document.querySelectorAll("body > [data-tr-panel]").forEach(el => el.remove()); ui.openDrop = null; drag = null; if(tipEl) tipEl.hidden = true; resizeObs?.disconnect(); }
+export function leaveTrend(){ rrToken++; clearTimeout(pickTimer); rrAfter.length = 0; document.querySelectorAll("body > [data-tr-panel]").forEach(el => el.remove()); ui.openDrop = null; drag = null; if(tipEl) tipEl.hidden = true; resizeObs?.disconnect(); }
