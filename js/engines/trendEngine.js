@@ -2,7 +2,7 @@
    فقط توابع خالص (بدون DOM). مدل‌های پیش‌بینی و آزمون خارج از نمونه در trendModels.js است. همهٔ آستانه‌ها از رجیستری تنظیمات (گروه «تحلیل روند و پیش‌بینی») خوانده می‌شود.
    «درآمد خالص» در این تب = مجموع ردیف‌های «جمع کل درآمد» فایل؛ تخفیفات دوباره کسر نمی‌شود. موتورهای دیگر (metrics/finance/…) تغییر نمی‌کنند. */
 import {registerGroup, registerSetting, get as S} from "../settings/settings.js";
-import {METHODS, METHOD_IDS, forecastSeries, zOf, ols, mean, sd, median, sum} from "./trendModels.js";
+import {METHODS, METHOD_IDS, forecastSeries, hashArr, modelSig, zOf, ols, mean, sd, median, sum} from "./trendModels.js";
 export {METHODS, METHOD_IDS};
 
 /* ───────────── تنظیمات ───────────── */
@@ -143,8 +143,13 @@ function forecastHot(y, codes, h){
 }
 /** پیش‌بینی ترکیبی: هر جزء جدا (فصل گرم با منطق خودش، بقیه خودکار) و جمع نتایج؛ t = تعداد ماه‌های آموزش */
 function composeParts(parts, codes, t, hh){
-  const cs = codes.slice(0, t), moy0 = +cs[0].slice(4), fc = Array(hh).fill(0);
-  PARTS.forEach((k, j) => { const ys = parts[j].slice(0, t), r = k === "hot" ? forecastHot(ys, cs, hh) : forecastSeries(ys, hh, "auto", moy0, {allowNeg:true}); r.fc.forEach((v, i) => { fc[i] += v; }); });
+  const cs = codes.slice(0, t), moy0 = +cs[0].slice(4), fc = Array(hh).fill(0), sg = modelSig();
+  PARTS.forEach((k, j) => {
+    const ys = parts[j].slice(0, t);
+    /* طرح فقط برای ران نهایی (سری کامل) کش می‌شود؛ همان سری برای افق‌های دیگر دوباره ارزیابی نشود */
+    const r = k === "hot" ? forecastHot(ys, cs, hh) : forecastSeries(ys, hh, "auto", moy0, {allowNeg:true, planKey:t === parts[j].length ? "PI|" + k + "|" + hashArr(ys) + "|" + moy0 + "|" + sg : null});
+    r.fc.forEach((v, i) => { fc[i] += v; });
+  });
   return fc;
 }
 
@@ -165,25 +170,24 @@ function scenarioFactors(it, id, refIdx, codes){
   return codes.map(c => PARTS.reduce((t, k) => t + w[k]/tot*(k === "tax" ? ft(c)*fx(c) : ft(c)), 0));
 }
 /* کش پایدار پیش‌بینی: گروه‌بندی در هر رندر ممکن است آرایهٔ it تازه بسازد؛ اثرانگشت داده
-   باعث می‌شود همان سری/تنظیمات در رندرهای بعدی دوباره مدل‌سازی نشود. */
-const forecastMemo = new Map();
+   باعث می‌شود همان سری/تنظیمات در رندرهای بعدی دوباره مدل‌سازی نشود.
+   دو لایه: «طرح» (انتخاب مدل و ارزیابی؛ مستقل از افق) و «نتیجه» (برای یک افق مشخص). */
+const forecastMemo = new Map(), fpMemo = new WeakMap(), modelFpMemo = new WeakMap();
 const fingerprint = (it, id, model) => {
-  let h = 2166136261;
-  const feed = v => { const x = String(v) + "|"; for(let i=0;i<x.length;i++){ h ^= x.charCodeAt(i); h = Math.imul(h, 16777619); } };
-  feed(model.period?.to || "");
-  for(const c of model.months) feed(c);
-  const keys = (id === "income" || id === "collection") ? [id, ...PARTS] : [id];
-  for(const k of keys){ feed(k); for(const v of (it[k] || [])) feed(v); }
-  return (h >>> 0).toString(36);
+  let m = fpMemo.get(it); if(!m) fpMemo.set(it, m = new Map());
+  const keys = (id === "income" || id === "collection") ? [id, ...PARTS] : [id], mk = id;
+  let s = m.get(mk); if(!s) m.set(mk, s = keys.map(k => k + ":" + hashArr(it[k] || [])).join(","));
+  let mf = modelFpMemo.get(model); if(!mf) modelFpMemo.set(model, mf = hashArr(model.months.map(c => +c)) + "@" + (model.period?.to || ""));
+  return mf + "|" + s;
 };
 /** پیش‌بینی h ماه یک شاخص از it (سری‌های ماهانهٔ تجمیع‌شده).
  *  o = {method:"auto"|شناسهٔ مدل|"parts", a, b}؛ بازهٔ آموزش: کل تاریخچه (تنظیم trainFull) یا [a,b].
  *  خروجی: {fc, lo, hi, method, eval, rel, sigma, note, origin (اندیس آخرین ماه واقعی)، refIdx/ref (آخرین ماه کامل آموزش)، uncert (نیم‌پهنا/مقدار در آخر افق)، uncertHigh} */
 export function forecastMetric(it, id, model, h, o = {}){
   const M = model.months.length, method = o.method || "auto", a = o.a ?? 0, b = o.b ?? M - 1, full = S("trend.trainFull");
-  const key = [id, h, method, full ? "f" : a + "-" + b, S("trend.components"), S("trend.excludePartial"), S("trend.confidence"), S("trend.maWindow"), S("trend.hotFrom"), S("trend.hotTo"), S("trend.minBacktest"), S("trend.seasonalMin"), S("trend.arimaMin")].join("|");
-  /* کلید شامل محتوای واقعی سری و اجزای مؤثر بر سناریو است؛ بین رندرها و گروه‌ها ایمن است. */
-  const fk = fingerprint(it, id, model) + "|" + key + "|" + [S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(",");
+  /* کلید «طرح»: همه‌چیز به‌جز افق، سطح اطمینان و سناریو. کلید «نتیجه»: طرح + افق + اطمینان + آستانهٔ عدم‌قطعیت + سناریو. */
+  const pk = fingerprint(it, id, model) + "|" + [id, method, full ? "f" : a + "-" + b, S("trend.components"), S("trend.excludePartial"), modelSig(), S("trend.hotFrom"), S("trend.hotTo")].join("|");
+  const fk = pk + "|" + [h, S("trend.confidence"), S("trend.uncertainHigh"), S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(",");
   if(forecastMemo.has(fk)) return forecastMemo.get(fk);
   const tr0 = full ? 0 : a; let tr1 = full ? M - 1 : b, cut = 0;
   const pi = periodInfo(model);
@@ -194,7 +198,7 @@ export function forecastMetric(it, id, model, h, o = {}){
     const parts = PARTS.map(k => it[k].slice(tr0, tr1 + 1));
     extra = {parts:{run:(ys, hh) => composeParts(parts, codes, ys.length, hh), min:4}};
   } else if(m === "parts") m = "auto";
-  const r = forecastSeries(y, H, m, moy0, {extra, allowNeg:id === "other", prefer:extra ? {id:"parts", tol:1.15, t:METHOD_T.parts} : null});
+  const r = forecastSeries(y, H, m, moy0, {extra, allowNeg:id === "other", prefer:extra ? {id:"parts", tol:1.15, t:METHOD_T.parts} : null, planKey:pk});
   if(id === "hot" && m === "auto"){   /* فصل گرم: فقط ماه‌های صدور مبلغ دارند؛ منطق اختصاصی (همان منطق روش «ترکیبی از اجزا») */
     const hf = forecastHot(y, codes, H).fc;
     r.lo = r.lo.map((v, i) => Math.max(0, v + hf[i] - r.fc[i])); r.hi = r.hi.map((v, i) => Math.max(0, v + hf[i] - r.fc[i])); r.fc = hf; r.method = "hot";
