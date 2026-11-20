@@ -2,7 +2,7 @@
    فقط توابع خالص (بدون DOM). مدل‌های پیش‌بینی و آزمون خارج از نمونه در trendModels.js است. همهٔ آستانه‌ها از رجیستری تنظیمات (گروه «تحلیل روند و پیش‌بینی») خوانده می‌شود.
    «درآمد خالص» در این تب = مجموع ردیف‌های «جمع کل درآمد» فایل؛ تخفیفات دوباره کسر نمی‌شود. موتورهای دیگر (metrics/finance/…) تغییر نمی‌کنند. */
 import {registerGroup, registerSetting, get as S} from "../settings/settings.js";
-import {METHODS, METHOD_IDS, forecastSeries, zOf, ols, mean, sd, median, sum} from "./trendModels.js";
+import {METHODS, METHOD_IDS, forecastSeries, hashArr, modelSig, zOf, ols, mean, sd, median, sum} from "./trendModels.js";
 export {METHODS, METHOD_IDS};
 
 /* ───────────── تنظیمات ───────────── */
@@ -83,25 +83,35 @@ export function prepare(p){
     pars:p.pars.map(x=>({id:x.id,t:x.t})), cities:p.cities.map(c=>({id:c.id,t:c.t,par:p.pars[c.p].id,rural:c.rural})), bts:p.bts.map(b=>({id:b.id,t:b.t,armed:b.armed}))};
   cache.set(p, model); return model;
 }
-/** فیلتر: armed(with|without|only) · settlement(all|city|rural) · pars/cities/bts (Set؛ خالی = همه) */
+/** فیلتر: نتایج هر ترکیب فیلتر روی مدل تغییرناپذیر، بین رندرهای تب روند بازاستفاده می‌شود. */
+const filterMemo = new WeakMap();
 export function filterRecs(model, f){
-  return model.recs.filter(r =>
+  let cache = filterMemo.get(model); if(!cache) filterMemo.set(model, cache = new Map());
+  const key = [f.armed || "without", f.settlement || "all",
+    [...(f.pars || [])].sort().join(","), [...(f.cities || [])].sort().join(","), [...(f.bts || [])].sort().join(",")].join("|");
+  if(cache.has(key)) return cache.get(key);
+  const rows = model.recs.filter(r =>
     (f.armed === "with" || r.armed === (f.armed === "only")) &&
     (f.settlement === "all" || r.rural === (f.settlement === "rural")) &&
     (!f.pars?.size || f.pars.has(r.par)) && (!f.cities?.size || f.cities.has(r.city)) && (!f.bts?.size || f.bts.has(r.bt)));
+  if(cache.size > 64) cache.clear(); cache.set(key, rows); return rows;
 }
 const KEYS = ["income","net","collection","consumption","water","sewage","excess","hot","tax","other","discount"];
+const sumMemo = new WeakMap(), groupMemo = new WeakMap();
 export function sumItems(recs, M){
+  let cache = sumMemo.get(recs); if(cache?.has(M)) return cache.get(M);
   const o = {}; KEYS.forEach(k => o[k] = zeros(M));
   for(const r of recs) for(const k of KEYS) add(o[k], r.it[k]);
   o.ratio = o.income.map((v, i) => v > 0 ? o.collection[i]/v*100 : 0);   /* درصد وصول = وصول ÷ جمع کل درآمد (٪) */
-  return o;
+  if(!cache) sumMemo.set(recs, cache = new Map()); cache.set(M, o); return o;
 }
 export function groupBy(recs, dim, M){
+  let cache = groupMemo.get(recs); if(!cache) groupMemo.set(recs, cache = new Map());
+  const key = dim + "|" + M; if(cache.has(key)) return cache.get(key);
   const m = new Map(), tk = dim === "par" ? "parT" : dim === "city" ? "cityT" : "btT";
   for(const r of recs){ const id = r[dim]; let g = m.get(id); if(!g) m.set(id, g = {id, name:r[tk], recs:[], par:r.par}); g.recs.push(r); }
   for(const g of m.values()){ g.it = sumItems(g.recs, M); g.n = g.recs.length; }
-  return m;
+  cache.set(key, m); return m;
 }
 export const seriesOf = (it, id) => id === "ratio" ? it.income.map((v,i) => v > 0 ? it.collection[i]/v*100 : 0) : it[id];
 export function over(it, id, a, b){
@@ -133,8 +143,13 @@ function forecastHot(y, codes, h){
 }
 /** پیش‌بینی ترکیبی: هر جزء جدا (فصل گرم با منطق خودش، بقیه خودکار) و جمع نتایج؛ t = تعداد ماه‌های آموزش */
 function composeParts(parts, codes, t, hh){
-  const cs = codes.slice(0, t), moy0 = +cs[0].slice(4), fc = Array(hh).fill(0);
-  PARTS.forEach((k, j) => { const ys = parts[j].slice(0, t), r = k === "hot" ? forecastHot(ys, cs, hh) : forecastSeries(ys, hh, "auto", moy0, {allowNeg:true}); r.fc.forEach((v, i) => { fc[i] += v; }); });
+  const cs = codes.slice(0, t), moy0 = +cs[0].slice(4), fc = Array(hh).fill(0), sg = modelSig();
+  PARTS.forEach((k, j) => {
+    const ys = parts[j].slice(0, t);
+    /* طرح فقط برای ران نهایی (سری کامل) کش می‌شود؛ همان سری برای افق‌های دیگر دوباره ارزیابی نشود */
+    const r = k === "hot" ? forecastHot(ys, cs, hh) : forecastSeries(ys, hh, "auto", moy0, {allowNeg:true, planKey:t === parts[j].length ? "PI|" + k + "|" + hashArr(ys) + "|" + moy0 + "|" + sg : null});
+    r.fc.forEach((v, i) => { fc[i] += v; });
+  });
   return fc;
 }
 
@@ -154,15 +169,26 @@ function scenarioFactors(it, id, refIdx, codes){
   if(!tot) return null;
   return codes.map(c => PARTS.reduce((t, k) => t + w[k]/tot*(k === "tax" ? ft(c)*fx(c) : ft(c)), 0));
 }
-const memo = new WeakMap();
+/* کش پایدار پیش‌بینی: گروه‌بندی در هر رندر ممکن است آرایهٔ it تازه بسازد؛ اثرانگشت داده
+   باعث می‌شود همان سری/تنظیمات در رندرهای بعدی دوباره مدل‌سازی نشود.
+   دو لایه: «طرح» (انتخاب مدل و ارزیابی؛ مستقل از افق) و «نتیجه» (برای یک افق مشخص). */
+const forecastMemo = new Map(), fpMemo = new WeakMap(), modelFpMemo = new WeakMap();
+const fingerprint = (it, id, model) => {
+  let m = fpMemo.get(it); if(!m) fpMemo.set(it, m = new Map());
+  const keys = (id === "income" || id === "collection") ? [id, ...PARTS] : [id], mk = id;
+  let s = m.get(mk); if(!s) m.set(mk, s = keys.map(k => k + ":" + hashArr(it[k] || [])).join(","));
+  let mf = modelFpMemo.get(model); if(!mf) modelFpMemo.set(model, mf = hashArr(model.months.map(c => +c)) + "@" + (model.period?.to || ""));
+  return mf + "|" + s;
+};
 /** پیش‌بینی h ماه یک شاخص از it (سری‌های ماهانهٔ تجمیع‌شده).
  *  o = {method:"auto"|شناسهٔ مدل|"parts", a, b}؛ بازهٔ آموزش: کل تاریخچه (تنظیم trainFull) یا [a,b].
  *  خروجی: {fc, lo, hi, method, eval, rel, sigma, note, origin (اندیس آخرین ماه واقعی)، refIdx/ref (آخرین ماه کامل آموزش)، uncert (نیم‌پهنا/مقدار در آخر افق)، uncertHigh} */
 export function forecastMetric(it, id, model, h, o = {}){
   const M = model.months.length, method = o.method || "auto", a = o.a ?? 0, b = o.b ?? M - 1, full = S("trend.trainFull");
-  const key = [id, h, method, full ? "f" : a + "-" + b, S("trend.components"), S("trend.excludePartial"), S("trend.confidence"), S("trend.maWindow"), S("trend.hotFrom"), S("trend.hotTo"), S("trend.minBacktest"), S("trend.seasonalMin"), S("trend.arimaMin")].join("|");
-  /* هر سری تجمیع‌شده حافظهٔ مستقل دارد؛ کلیدهای نمایشی مشترک نباید پیش‌بینی گروه دیگری را بازگردانند. */
-  const holder = it; let mm = memo.get(holder); if(!mm) memo.set(holder, mm = new Map()); if(mm.size > 4000) mm.clear(); const fk = key + "|" + [S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(","); if(mm.has(fk)) return mm.get(fk);
+  /* کلید «طرح»: همه‌چیز به‌جز افق، سطح اطمینان و سناریو. کلید «نتیجه»: طرح + افق + اطمینان + آستانهٔ عدم‌قطعیت + سناریو. */
+  const pk = fingerprint(it, id, model) + "|" + [id, method, full ? "f" : a + "-" + b, S("trend.components"), S("trend.excludePartial"), modelSig(), S("trend.hotFrom"), S("trend.hotTo")].join("|");
+  const fk = pk + "|" + [h, S("trend.confidence"), S("trend.uncertainHigh"), S("trend.tariffPct"), S("trend.tariffYear"), S("trend.tariffMonth"), S("trend.taxPct"), S("trend.taxYear"), S("trend.taxMonth")].join(",");
+  if(forecastMemo.has(fk)) return forecastMemo.get(fk);
   const tr0 = full ? 0 : a; let tr1 = full ? M - 1 : b, cut = 0;
   const pi = periodInfo(model);
   if(S("trend.excludePartial") && pi.partial && tr1 === M - 1 && tr1 - tr0 >= 3){ tr1--; cut = 1; }
@@ -172,7 +198,7 @@ export function forecastMetric(it, id, model, h, o = {}){
     const parts = PARTS.map(k => it[k].slice(tr0, tr1 + 1));
     extra = {parts:{run:(ys, hh) => composeParts(parts, codes, ys.length, hh), min:4}};
   } else if(m === "parts") m = "auto";
-  const r = forecastSeries(y, H, m, moy0, {extra, allowNeg:id === "other", prefer:extra ? {id:"parts", tol:1.15, t:METHOD_T.parts} : null});
+  const r = forecastSeries(y, H, m, moy0, {extra, allowNeg:id === "other", prefer:extra ? {id:"parts", tol:1.15, t:METHOD_T.parts} : null, planKey:pk});
   if(id === "hot" && m === "auto"){   /* فصل گرم: فقط ماه‌های صدور مبلغ دارند؛ منطق اختصاصی (همان منطق روش «ترکیبی از اجزا») */
     const hf = forecastHot(y, codes, H).fc;
     r.lo = r.lo.map((v, i) => Math.max(0, v + hf[i] - r.fc[i])); r.hi = r.hi.map((v, i) => Math.max(0, v + hf[i] - r.fc[i])); r.fc = hf; r.method = "hot";
@@ -182,7 +208,8 @@ export function forecastMetric(it, id, model, h, o = {}){
   const out = {...r, origin:tr1 + cut, refIdx:tr1, ref:y[y.length-1] ?? 0, partialCut:!!cut, uncert, uncertHigh:uncert*100 > S("trend.uncertainHigh"), trainFrom:tr0, trainTo:tr1};
   const fcodes = Array.from({length:out.fc.length}, (_, i) => addMonths(model.months[out.origin], i + 1)), fac = scenarioFactors(it, id, out.refIdx, fcodes);
   if(fac && fac.some(f => f !== 1)){ out.fc = out.fc.map((v, i) => v*fac[i]); out.lo = out.lo.map((v, i) => v*fac[i]); out.hi = out.hi.map((v, i) => v*fac[i]); out.scen = fac; }
-  mm.set(fk, out); return out;
+  if(forecastMemo.size > 3000) forecastMemo.clear();
+  forecastMemo.set(fk, out); return out;
 }
 /** تعداد ماه‌های باقی‌ماندهٔ سال شمسی پس از ماه اندیس i */
 export const monthsLeftInYear = (model, i) => 12 - (+model.months[i].slice(4));
@@ -204,8 +231,10 @@ export function outliers(y){
 
 /* ───────────── قالب‌بندی و کیفیت داده ───────────── */
 export const fmtFa = (v, d = 0) => (v == null || !isFinite(v)) ? "—" : Number(v).toLocaleString("fa-IR", {maximumFractionDigits:d, minimumFractionDigits:0});
-/** کیفیت داده (روی کل داده، مستقل از فیلتر) */
+/** کیفیت داده (روی کل داده، مستقل از فیلتر) — برای مدل ثابت فقط یک‌بار محاسبه می‌شود. */
+const qualityMemo = new WeakMap();
 export function dataQuality(model){
+  if(qualityMemo.has(model)) return qualityMemo.get(model);
   const M = model.months.length; let negInc = 0, negCol = 0, bigRatio = 0, mismatch = 0, noInc = 0;
   for(const r of model.recs){
     const inc = r.it.income, col = r.it.collection;
@@ -225,7 +254,7 @@ export function dataQuality(model){
   if(mismatch) items.push({sev:"info", t:`${fmtFa(mismatch)} مورد (ردیف×ماه) که «سایر» (درآمد − اجزا) بیش از ۵٪ درآمد منفی است؛ یعنی جمع کل درآمد با اجزای شناخته‌شده نمی‌خواند.`});
   const nt = model.stats?.noTotal; if(nt){ let tot = 0; for(const r of model.recs) for(let i = 0; i < M; i++) tot += r.it.income[i] || 0;
     items.push({sev:"info", t:`${fmtFa(nt)} رکورد (امور×شهر×کاربری) اجزای درآمد دارند ولی ردیف «جمع کل درآمد» در فایل ندارند؛ طبق منطق فایل درآمد آن‌ها صفر محسوب شد و در جمع درآمد نیامده است (مجموع اجزای آن‌ها ≈ ${fmtFa(model.stats.noTotalAmt/1e9, 2)} میلیارد ریال، ${fmtFa(model.stats.noTotalAmt/Math.max(1, tot)*100, 3)}٪ درآمد کل).`}); }
-  return items;
+  qualityMemo.set(model, items); return items;
 }
 
 /* ───────────── برداشت‌های توصیفی (فقط از خروجی مدل پیش‌بینی) ───────────── */

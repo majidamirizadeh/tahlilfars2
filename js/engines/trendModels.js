@@ -10,6 +10,21 @@ export const median = a => { if(!a.length) return 0; const s = [...a].sort((x, y
 const rng = h => Array.from({length:h}, (_, i) => i);
 const SEASON = 12;
 
+/* ───────── هش سریع محتوای سری (برای کلید کش؛ دقیق روی بیت‌های عدد) ───────── */
+const _f64 = new Float64Array(1), _u32 = new Uint32Array(_f64.buffer);
+/** هش محتوای آرایهٔ عددی (دو شمارندهٔ ۳۲ بیتی + طول) */
+export function hashArr(arr, n = arr.length){
+  let a = 0x811c9dc5, b = 0x9747b28c;
+  for(let i = 0; i < n; i++){
+    const v = arr[i]; _f64[0] = v == null ? NaN : v; const lo = _u32[0], hi = _u32[1];
+    a = Math.imul(a ^ lo, 16777619); a = Math.imul(a ^ hi, 16777619);
+    b = Math.imul((b + lo) | 0, 0x85ebca6b) ^ hi; b = (b << 13 | b >>> 19) | 0;
+  }
+  return (a >>> 0).toString(36) + "." + (b >>> 0).toString(36) + "." + n;
+}
+/** تنظیماتی که خروجی «برازش و انتخاب مدل» به آن‌ها وابسته است (برای کلید کش) */
+export const modelSig = () => [S("trend.maWindow"), S("trend.seasonalMin"), S("trend.arimaMin"), S("trend.minBacktest")].join(",");
+
 export function ols(y){
   const n = y.length, mx = (n - 1)/2, my = mean(y); let sxy = 0, sxx = 0;
   for(let i = 0; i < n; i++){ sxy += (i - mx)*(y[i] - my); sxx += (i - mx)**2; }
@@ -177,8 +192,11 @@ export const zOf = Z;
 
 const stdCands = () => { const o = {}; for(const id of METHOD_IDS) o[id] = {run:METHODS[id].run, min:METHODS[id].min()}; return o; };
 
+/* طرح (plan): هر چیزی که به افق h وابسته نیست (ارزیابی همهٔ مدل‌ها، انتخاب مدل، σ، سطح اتکا) یک‌بار محاسبه و نگه داشته می‌شود؛ تغییر افق فقط مدل انتخابی را دوباره اجرا می‌کند. */
+const planMemo = new Map();
+
 /** پیش‌بینی یک سری: method = "auto" یا شناسهٔ مدل. خروجی شامل بازهٔ پیش‌بینی (σ از خطاهای یک‌گام خارج از نمونه × √افق)، ارزیابی همهٔ مدل‌ها و سطح اتکا. */
-export function forecastSeries(y0, h, method, moy0, {allowNeg = false, extra = null, prefer = null} = {}){
+export function forecastSeries(y0, h, method, moy0, {allowNeg = false, extra = null, prefer = null, planKey = null} = {}){
   /* صفرهای ابتدای سری (کاربری تازه‌وارد) شیب OLS را مصنوعی بالا می‌برد */
   let lead = 0;
   while(lead < y0.length - 2 && !(y0[lead] > 0)) lead++;
@@ -186,39 +204,47 @@ export function forecastSeries(y0, h, method, moy0, {allowNeg = false, extra = n
   const moyAdj = moy0 ? ((moy0 - 1 + lead) % 12) + 1 : moy0;
   const n = y.length, cands = {...stdCands(), ...(extra || {})};
   if(n < 2) return {fc:rng(h).map(() => y[0] || 0), lo:rng(h).map(() => y[0] || 0), hi:rng(h).map(() => y[0] || 0), method:"linear", eval:null, sigma:0, rel:{level:"none", msg:"برای پیش‌بینی حداقل ۲ ماه داده لازم است؛ پیش‌بینی قابل اتکا نیست."}};
-  const nz = y.filter(v => v > 0).length, sparse = nz < Math.max(4, n * 0.5);
-  const ev = n >= 4 ? evaluate(cands, y, moyAdj, allowNeg) : {results:{}, best:null};
-  let id = method, note = null;
-  if(id === "auto" && prefer && ev.best && ev.best !== prefer.id && ev.results[prefer.id]?.ok && ev.results[prefer.id].smape <= ev.results[ev.best].smape*prefer.tol + 1e-9){ id = prefer.id; note = `«${prefer.t}» به‌دلیل خطای قابل‌مقایسه با بهترین مدل (حداکثر ${Math.round((prefer.tol - 1)*100)}٪ بیشتر) و آگاهی از ساختار اجزا ترجیح داده شد.`; }
-  else if(id === "auto"){
-    id = ev.best || (n >= 12 ? "snaive" : n >= 4 ? "dholt" : n >= 3 ? "ses" : "ma");
-    const last = y[n - 1] ?? 0, mx = Math.max(...y.map(Math.abs), 1e-9);
-    const collapsed = Math.abs(last) < mx * 0.15; /* سطح اخیر خیلی پایین‌تر از سقف تاریخچه */
-    if((sparse || collapsed) && (id === "linear" || id === "holt" || id === "hw" || id === "arima" || id === "snaive")){
-      const alt = ev.results.ses?.ok ? "ses" : ev.results.ma?.ok ? "ma" : ev.results.dholt?.ok ? "dholt" : id;
-      if(alt !== id){ note = `سری ${sparse ? "کم‌تراکم" : "با افت سطح اخیر"}؛ به‌جای «${METHODS[id]?.t || id}» از «${METHODS[alt]?.t || alt}» استفاده شد.`; id = alt; }
+  const neg = allowNeg;
+  let plan = planKey ? planMemo.get(planKey) : null;
+  if(!plan){
+    const nz = y.filter(v => v > 0).length, sparse = nz < Math.max(4, n * 0.5);
+    const ev = n >= 4 ? evaluate(cands, y, moyAdj, allowNeg) : {results:{}, best:null};
+    let id = method, note = null;
+    if(id === "auto" && prefer && ev.best && ev.best !== prefer.id && ev.results[prefer.id]?.ok && ev.results[prefer.id].smape <= ev.results[ev.best].smape*prefer.tol + 1e-9){ id = prefer.id; note = `«${prefer.t}» به‌دلیل خطای قابل‌مقایسه با بهترین مدل (حداکثر ${Math.round((prefer.tol - 1)*100)}٪ بیشتر) و آگاهی از ساختار اجزا ترجیح داده شد.`; }
+    else if(id === "auto"){
+      id = ev.best || (n >= 12 ? "snaive" : n >= 4 ? "dholt" : n >= 3 ? "ses" : "ma");
+      const last = y[n - 1] ?? 0, mx = Math.max(...y.map(Math.abs), 1e-9);
+      const collapsed = Math.abs(last) < mx * 0.15; /* سطح اخیر خیلی پایین‌تر از سقف تاریخچه */
+      if((sparse || collapsed) && (id === "linear" || id === "holt" || id === "hw" || id === "arima" || id === "snaive")){
+        const alt = ev.results.ses?.ok ? "ses" : ev.results.ma?.ok ? "ma" : ev.results.dholt?.ok ? "dholt" : id;
+        if(alt !== id){ note = `سری ${sparse ? "کم‌تراکم" : "با افت سطح اخیر"}؛ به‌جای «${METHODS[id]?.t || id}» از «${METHODS[alt]?.t || alt}» استفاده شد.`; id = alt; }
+      }
+      if(!ev.best && !note) note = "داده برای انتخاب خودکار مبتنی بر آزمون خارج از نمونه کافی نیست؛ مدل سطح‌محور استفاده شد.";
     }
-    if(!ev.best && !note) note = "داده برای انتخاب خودکار مبتنی بر آزمون خارج از نمونه کافی نیست؛ مدل سطح‌محور استفاده شد.";
+    else if(cands[id] && n < cands[id].min){ const was = id; id = ev.best || (n >= 3 ? "ses" : "ma"); note = `«${METHODS[was]?.t || was}» با ${n} ماه داده قابل اجرا نیست؛ به «${METHODS[id]?.t || id}» تبدیل شد.`; }
+    const cd0 = cands[id] || cands.linear;
+    const myEval = ev.results[id] || (n >= 4 ? backtest(cd0.run, cd0.min, y, moyAdj, neg) : {ok:false});
+    let sigma, sigmaSrc;
+    if(myEval.ok && myEval.errs.length >= MIN_TEST){ sigma = Math.sqrt(mean(myEval.errs.map(e => e*e))); sigmaSrc = "oos"; }
+    else { const f = ols(y); sigma = sd(y.map((v, i) => v - (f.a + f.b*i))) || sd(y); sigmaSrc = "insample"; }
+    /* σ را هم نسبت به سطح اخیر محدود کن تا باند عدم‌قطعیت منفجر نشود */
+    const lvl = Math.abs(y[n - 1] ?? mean(y)) || 1;
+    sigma = Math.min(sigma, lvl * 0.75);
+    const minB = S("trend.minBacktest"), nTest = myEval.ok ? myEval.n : 0;
+    let rel;
+    if(n < minB || !myEval.ok) rel = {level:"none", msg:`تاریخچه (${n} ماه) برای ارزیابی خارج از نمونه کافی نیست؛ پیش‌بینی قابل اتکا نیست و فقط راهنماست.`};
+    else if(n < 12 || nTest < 3 || (myEval.smape ?? 0) > 25) rel = {level:"low", msg:`اتکای محدود: تاریخچه ${n} ماه و ${nTest} نقطهٔ آزمون${(myEval.smape ?? 0) > 25 ? " و خطای بالا" : ""}؛ الگوی فصلی قابل تخمین نیست.`};
+    else rel = {level:"ok", msg:"اتکای قابل‌قبول (آزمون خارج از نمونه با تعداد نقاط کافی)."};
+    plan = {id, note, ev, myEval, sigma, sigmaSrc, rel, nTest};
+    if(planKey){ if(planMemo.size > 4000) planMemo.clear(); planMemo.set(planKey, plan); }
   }
-  else if(cands[id] && n < cands[id].min){ const was = id; id = ev.best || (n >= 3 ? "ses" : "ma"); note = `«${METHODS[was]?.t || was}» با ${n} ماه داده قابل اجرا نیست؛ به «${METHODS[id]?.t || id}» تبدیل شد.`; }
-  const cd = cands[id] || cands.linear, raw = cd.run(y, h, moyAdj), neg = allowNeg;
+  const {id, note, ev, myEval, sigma, sigmaSrc, rel, nTest} = plan;
+  const cd = cands[id] || cands.linear, raw = cd.run(y, h, moyAdj);
   /* لنگر + سقف نسبت به تاریخچه؛ جلوگیری از پرش عمودی مثل تصویر کاربری‌ها */
-  let fc = clampFc(y, raw.map(v => neg ? v : Math.max(0, v)));
-  const myEval = ev.results[id] || (n >= 4 ? backtest(cd.run, cd.min, y, moyAdj, neg) : {ok:false});
-  let sigma, sigmaSrc;
-  if(myEval.ok && myEval.errs.length >= MIN_TEST){ sigma = Math.sqrt(mean(myEval.errs.map(e => e*e))); sigmaSrc = "oos"; }
-  else { const f = ols(y); sigma = sd(y.map((v, i) => v - (f.a + f.b*i))) || sd(y); sigmaSrc = "insample"; }
-  /* σ را هم نسبت به سطح اخیر محدود کن تا باند عدم‌قطعیت منفجر نشود */
-  const lvl = Math.abs(y[n - 1] ?? mean(y)) || 1;
-  sigma = Math.min(sigma, lvl * 0.75);
+  const fc = clampFc(y, raw.map(v => neg ? v : Math.max(0, v)));
   const z = Z(S("trend.confidence"));
   const lo = fc.map((v, i) => neg ? v - z*sigma*Math.sqrt(i + 1) : Math.max(0, v - z*sigma*Math.sqrt(i + 1)));
   const hiRaw = fc.map((v, i) => v + z*sigma*Math.sqrt(i + 1));
   const hi = clampFc(y, hiRaw.map((v, i) => Math.max(v, fc[i])));
-  const minB = S("trend.minBacktest"), nTest = myEval.ok ? myEval.n : 0;
-  let rel;
-  if(n < minB || !myEval.ok) rel = {level:"none", msg:`تاریخچه (${n} ماه) برای ارزیابی خارج از نمونه کافی نیست؛ پیش‌بینی قابل اتکا نیست و فقط راهنماست.`};
-  else if(n < 12 || nTest < 3 || (myEval.smape ?? 0) > 25) rel = {level:"low", msg:`اتکای محدود: تاریخچه ${n} ماه و ${nTest} نقطهٔ آزمون${(myEval.smape ?? 0) > 25 ? " و خطای بالا" : ""}؛ الگوی فصلی قابل تخمین نیست.`};
-  else rel = {level:"ok", msg:"اتکای قابل‌قبول (آزمون خارج از نمونه با تعداد نقاط کافی)."};
   return {fc, lo, hi, method:id, eval:{...ev, chosen:myEval}, sigma, sigmaSrc, rel, note, n, nTest};
 }
