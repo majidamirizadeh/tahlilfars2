@@ -38,7 +38,7 @@ function dropBtn(kind, label, panelHtml, active, clearTitle){
 const pill = (name, opts, cur, title) => `<label class="tr-pill"><span>${title}</span><select class="fin-pill" data-tr="${name}">${opts.map(([v, t]) => `<option value="${esc(v)}" ${String(cur) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
 const seg = (name, opts, cur, title) => `<div class="tr-seg" role="group" aria-label="${title}">${opts.map(([v, t, c]) => `<button type="button" class="${String(cur) === String(v) ? "on" : ""}" data-tr-seg="${name}" data-v="${esc(v)}" aria-pressed="${String(cur) === String(v)}">${c ? `<i style="background:${c}"></i>` : ""}${esc(t)}</button>`).join("")}</div>`;
 const tog = (name, label, on) => `<label class="tr-tog"><input type="checkbox" data-tr-tog="${name}" ${on ? "checked" : ""}><span>${label}</span></label>`;
-const AXIS = {money:"L", vol:"R", pct:"P"};
+const AXIS = {money:"L", vol:"R", pct:"P", price:"Q"};
 const sum1 = (arr, a, b) => { let t = 0; for(let i = a; i <= b; i++) t += arr[i] || 0; return t; };
 /* زیرمجموعهٔ هر امور روی همان آرایهٔ فیلترشده فقط یک‌بار ساخته می‌شود. */
 const parSubsetMemo = new WeakMap();
@@ -56,10 +56,10 @@ export function renderTrend({data, onSettings}){
   const model = prepare(data), M = model.months.length; sanitize(model); specs.clear();
   ctxNow = {data, onSettings};
   const un = MONEY_UNITS.find(u => u.id === ui.unit) || MONEY_UNITS[2], vu = VOL_UNITS.find(u => u.id === ui.vunit) || VOL_UNITS[1];
-  const kd = k => k === "price" ? "money" : METRICS[k].k, scale = (k, v) => kd(k) === "money" ? v/un.d : kd(k) === "vol" ? v/vu.d : v, sc = (k, arr) => arr.map(v => v == null ? null : scale(k, v));
+  const kd = k => k === "price" ? "money" : METRICS[k].k, scale = (k, v) => k === "price" ? v : kd(k) === "money" ? v/un.d : kd(k) === "vol" ? v/vu.d : v, sc = (k, arr) => arr.map(v => v == null ? null : scale(k, v));
   const fmt = (k, v) => { if(v == null || !isFinite(v)) return "—"; const x = scale(k, v), ax = Math.abs(x); return kd(k) === "pct" ? fa(x, 1) : fa(x, ax >= 100 ? 0 : ax >= 10 ? 1 : 2); };
-  const unit = k => k === "price" ? `${un.t}/مترمکعب` : kd(k) === "money" ? un.t : kd(k) === "vol" ? vu.t : "٪";
-  const axes = {L:{unit:un.t}, R:{unit:vu.t}, P:{unit:"٪ (درصد وصول)", fmt:v => fa(v, 0) + "٪"}};
+  const unit = k => k === "price" ? "ریال/مترمکعب" : kd(k) === "money" ? un.t : kd(k) === "vol" ? vu.t : "٪";
+  const axes = {L:{unit:un.t}, R:{unit:vu.t}, P:{unit:"٪ (درصد وصول)", fmt:v => fa(v, 0) + "٪"}, Q:{unit:"ریال/مترمکعب", fmt:v => fa(v, 0)}};
   const a = ui.a, b = ui.b, rtl = S("trend.rtl"), anim = S("trend.anim"), pi = periodInfo(model), mets = ui.metrics, bandOn = ui.bandOn == null ? S("trend.band") : ui.bandOn;
   const trainFull = S("trend.trainFull"), origin0 = trainFull ? M - 1 : b, left = monthsLeftInYear(model, origin0);
   const hSet = ui.h == null ? S("trend.horizon") : ui.h, H = hSet === 0 ? (left > 0 ? left : 3) : hSet;
@@ -148,7 +148,7 @@ export function renderTrend({data, onSettings}){
   const mkSeries = (m, ent, r, o = {}) => { const raw = ent.slice(a, b + 1);
     return {id:o.id || m, name:o.name || metricMeta(m).t, color:o.color || metricMeta(m).c, axis:AXIS[kd(m)], act:sc(m, raw), fc:fcShow && r ? sc(m, r.fc) : null, lo:fcShow && r ? sc(m, r.lo) : null, hi:fcShow && r ? sc(m, r.hi) : null,
       out:o.out ? outliers(raw).filter(i => !isPartial(i)) : [], raw, ent, rraw:r, m, width:o.width}; };
-  const mkPriceSeries = (ent, o = {}) => { const raw = ent.slice(a, b + 1); return {id:o.id || "price", name:o.name || PRICE_META.t, color:o.color || PRICE_META.c, axis:"L", act:sc("price", raw), fc:null, lo:null, hi:null, out:[], raw, ent, rraw:null, m:"price", width:o.width, annotations:priceAnnotations(ent)}; };
+  const mkPriceSeries = (ent, o = {}) => { const raw = ent.slice(a, b + 1); return {id:o.id || "price", name:o.name || PRICE_META.t, color:o.color || PRICE_META.c, axis:"Q", act:sc("price", raw), fc:null, lo:null, hi:null, out:[], raw, ent, rraw:null, m:"price", width:o.width, annotations:priceAnnotations(ent)}; };
   const delta = (m, v, prev) => { if(prev == null || !isFinite(prev) || (m !== "ratio" && !prev)) return ""; const d = m === "ratio" ? v - prev : pctChange(v, prev); return d == null ? "" : ` (${d >= 0 ? "▲" : "▼"} ${fa(Math.abs(d), m === "ratio" ? 1 : 0)}${m === "ratio" ? " واحد" : "٪"} نسبت به ماه قبل)`; };
   const tipFor = (list, ttlFn) => i => { const isFc = i >= nAct, j = i - nAct, rows = [];
     list.forEach(s => { const u = unit(s.m);
@@ -338,7 +338,7 @@ export function renderTrend({data, onSettings}){
       }
       yCmpSeries.push({
         id: `yc-${m}-${y}`, name: `${metricMeta(m).t} ${fa(y).replace(/٬/g, "")}`,
-        color: yearColor(y), axis: AXIS[kd(m)], act, fc: null, lo: null, hi: null,
+        color: yearColor(y), axis: m === "price" ? "Q" : AXIS[kd(m)], act, fc: null, lo: null, hi: null,
         out: [], raw: act, ent: act, rraw: null, m, width: mi === 0 ? 2.8 : 2.2
       });
     });
