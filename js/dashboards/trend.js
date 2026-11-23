@@ -127,7 +127,7 @@ export function renderTrend({data, onSettings}){
   /* ── پیش‌بینی چهار شاخص (آموزش روی کل تاریخچه یا طبق تنظیم) ── */
   const res = {}; for(const m of MAIN) res[m] = forecastMetric(it, m, model, H, fo(ckTop));
   const forecastMets = mets.filter(m => MAIN.includes(m));
-  const origin = res[forecastMets[0] || "consumption"].origin, fcShow = ui.fcOn && origin === b, nAct = b - a + 1;
+  const origin = res[forecastMets[0] || "consumption"].origin, fcShow = ui.fcOn && forecastMets.length > 0 && origin === b, nAct = b - a + 1;
   const priceFull = it.water.map((v, i) => it.consumption[i] > 0 ? v / it.consumption[i] : null);
   const priceAnnotations = full => {
     const out = [];
@@ -244,13 +244,13 @@ export function renderTrend({data, onSettings}){
   const relCls = {none:"crit", low:"warn", ok:"good"}, relTxt = {ok:"اتکای قابل‌قبول", low:"اتکای محدود", none:"قابل اتکا نیست"};
   const mlines = `<ul class="tr-mlines">${forecastMets.map(m => { const r = res[m]; return `<li><i style="background:${METRICS[m].c}"></i><b>${esc(METRICS[m].t)}</b> <span class="tr-badge tr-b-${relCls[r.rel.level]}">${relTxt[r.rel.level]}</span> مدل: <b>${esc(METHOD_T[r.method] || r.method)}</b>${r.eval?.chosen?.ok && r.eval.chosen.smape != null ? ` · sMAPE ≈ <b>${fa(r.eval.chosen.smape, 1)}٪</b>` : ""}</li>`; }).join("")}</ul>`;
   const r0 = res[forecastMets[0] || "consumption"];
-  const trainLine = `<p class="tr-sub">آموزش مدل روی ${fa(r0.trainTo - r0.trainFrom + 1)} ماه (${esc(mName(model.months[r0.trainFrom], true))} تا ${esc(mName(model.months[r0.trainTo], true))})${!fcShow && ui.fcOn ? " · پیش‌بینی فقط وقتی «تا ماه» آخرین ماه داده باشد روی نمودار می‌آید." : ""}</p>`;
+  const trainLine = forecastMets.length ? `<p class="tr-sub">آموزش مدل روی ${fa(r0.trainTo - r0.trainFrom + 1)} ماه (${esc(mName(model.months[r0.trainFrom], true))} تا ${esc(mName(model.months[r0.trainTo], true))})${!fcShow && ui.fcOn ? " · پیش‌بینی فقط وقتی «تا ماه» آخرین ماه داده باشد روی نمودار می‌آید." : ""}</p>` : `<p class="tr-sub">قیمت آب فروش‌رفته شاخصی مشتق‌شده است؛ برای آن پیش‌بینی انجام نمی‌شود.</p>`;
   const yrLeg = `<div class="tr-yrleg" role="group" aria-label="نمایش/مخفی سال‌ها"><span class="tr-yrleg-l">سال‌ها:</span>${yearSet.map(y => {
     const isCur = y === curYear, off = !isCur && ui.yearsOff.includes(y);
     return `<button type="button" class="tr-yrbtn ${off ? "off" : "on"}" data-tr-year="${esc(y)}" ${isCur ? "disabled title=\"سال جاری همیشه روشن است\"" : `title="${off ? "روشن کردن" : "خاموش کردن"} سال ${fa(y).replace(/٬/g, "")}"`} aria-pressed="${!off}"><i style="background:${yearColor(y)}"></i>${fa(y).replace(/٬/g, "")}${isCur ? " (جاری)" : ""}</button>`;
   }).join("")}<span class="tr-yrleg-hint">— سال جاری همیشه روشن؛ خاموش/روشن روی همه نمودارها اعمال می‌شود</span></div>`;
-  const combHelp = `<p class="tr-hint">برای بزرگ‌نمایی روی نمودار بکشید؛ دوبار کلیک = کل بازه. خط پر = داده واقعی · خط‌چین با نقطهٔ توخالی = پیش‌بینی${bandOn && mets.length === 1 ? ` · ناحیهٔ رنگی = بازهٔ عدم‌قطعیت ${fa(S("trend.confidence"))}٪` : ""}. هر شاخص محور مستقل و هم‌رنگ خودش را دارد: مبلغ ← ${esc(un.t)}، مصرف ← ${esc(vu.t)}، درصد وصول ← ٪.</p>`;
-  const relAll = reliabilitySummary(Object.fromEntries(forecastMets.map(m => [m, res[m]])));
+  const combHelp = `<p class="tr-hint">برای بزرگ‌نمایی روی نمودار بکشید؛ دوبار کلیک = کل بازه. خط پر = داده واقعی · خط‌چین با نقطهٔ توخالی = پیش‌بینی${bandOn && mets.length === 1 && mets[0] !== "price" ? ` · ناحیهٔ رنگی = بازهٔ عدم‌قطعیت ${fa(S("trend.confidence"))}٪` : ""}. هر شاخص محور مستقل و هم‌رنگ خودش را دارد: مبلغ ← ${esc(un.t)}، مصرف ← ${esc(vu.t)}، درصد وصول ← ٪، قیمت آب فروش‌رفته ← ریال/مترمکعب. برچسب‌های ▲ درصد تغییر ماهانه و «سالانه» تغییر پایان سال نسبت به پایان سال قبل‌اند.</p>`;
+  const relAll = forecastMets.length ? reliabilitySummary(Object.fromEntries(forecastMets.map(m => [m, res[m]]))) : {level:"ok", msg:""};
   const relBanner = relAll.level !== "ok" ? `<div class="tr-warn ${relAll.level === "none" ? "tr-warn-crit" : ""}" role="note"><b>${relAll.level === "none" ? "پیش‌بینی‌ها قابل اتکا نیستند." : "اتکای پیش‌بینی‌ها محدود است."}</b> ${esc(relAll.msg)}</div>` : "";
 
   /* ── کارت نمودار کوچک (نمودار جدا برای هر امور/شهر/جزء) ── */
