@@ -52,8 +52,8 @@ function ts(sp, W, animate){
   const compact = !!sp.compact, H = sp.height || (compact ? 210 : 320), rtl = sp.rtl !== false, n = sp.labels.length, nAct = sp.nAct ?? n, hid = sp.hidden || new Set();
   const labs = compact && sp.short ? sp.short : sp.labels, rotate = !compact && n > 9, hasYears = !!(sp.years && sp.years.length);
   const bandOn = sp.band === "single" ? sp.series.filter(s => !hid.has(s.id)).length === 1 : !!sp.band;
-  const vis = sp.series.filter(s => !hid.has(s.id)), used = ["L", "R", "P"].filter(ax => vis.some(s => (s.axis || "L") === ax)), prim = used[0] || "L";
-  const AX = compact ? 42 : W < 520 ? 58 : 74, rightAx = used.filter(ax => (ax === prim) === rtl), leftAx = used.filter(ax => !rightAx.includes(ax));
+  const vis = sp.series.filter(s => !hid.has(s.id)), used = ["L", "R", "P", "Q"].filter(ax => vis.some(s => (s.axis || "L") === ax)), prim = used[0] || "L";
+  const AX = compact ? 42 : W < 520 ? 58 : 74, rightAx = used.filter(ax => ((ax === "L" || ax === "Q") === rtl)), leftAx = used.filter(ax => !rightAx.includes(ax));
   const m = {t:compact ? 12 : 30, b:(rotate ? 58 : compact ? 22 : 36) + (hasYears ? 20 : 0), l:leftAx.length ? leftAx.length*AX : 12, r:rightAx.length ? rightAx.length*AX : 12};
   const iw = W - m.l - m.r, ih = H - m.t - m.b, bw = iw/Math.max(1, n), X = i => rtl ? W - m.r - (i + .5)*bw : m.l + (i + .5)*bw;
   const sc = {}, Y = {};
@@ -103,7 +103,7 @@ function ts(sp, W, animate){
     if(act.length > 1) o += `<path d="${pathOf(act)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round" class="tc-line" ${glow}/>`;
     if(dots) act.forEach(p => { o += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="${col}" stroke="#fff" stroke-width="1.2"/>`; });
     else if(act.length) { const p = act[act.length - 1]; o += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${compact ? 3 : 3.8}" fill="${col}" stroke="#fff" stroke-width="1"/>`; }
-    if(!compact && s.annotations?.length) s.annotations.forEach(a => { const v = (s.act || [])[a.i]; if(v == null || !isFinite(v)) return; const y0 = Math.max(m.t + 10, y(v) - 12); o += T(X(a.i), y0, a.text, "tc-growth", `text-anchor="middle" style="fill:${col}"`); });
+    if(!compact && s.annotations?.length){ const stacked = new Map(); s.annotations.forEach(a => { const v = (s.act || [])[a.i]; if(v == null || !isFinite(v)) return; const n = stacked.get(a.i) || 0; stacked.set(a.i, n + 1); const y0 = Math.max(m.t + 10, y(v) - 12 - n*12); o += T(X(a.i), y0, a.text, "tc-growth", `text-anchor="middle" style="fill:${col}"`); }); }
     if(s.fc && act.length){ const base = act[act.length - 1], fp = [[base[0], base[1]]]; s.fc.forEach((v, i) => { if(v != null && isFinite(v)) fp.push([X(nAct + i), y(v)]); });
       if(fp.length > 1){ o += `<path d="${pathOf(fp)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-dasharray="${compact ? "5 4" : "7 5"}" stroke-linecap="round" class="tc-fline" ${glow}/>`;
         if(!compact && sp.fcDots !== false && fp.length <= 16) fp.slice(1).forEach(p => { o += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.8" fill="var(--panel)" stroke="${col}" stroke-width="2"/>`; }); } }
