@@ -103,6 +103,7 @@ function ts(sp, W, animate){
     if(act.length > 1) o += `<path d="${pathOf(act)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round" class="tc-line" ${glow}/>`;
     if(dots) act.forEach(p => { o += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4" fill="${col}" stroke="#fff" stroke-width="1.2"/>`; });
     else if(act.length) { const p = act[act.length - 1]; o += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${compact ? 3 : 3.8}" fill="${col}" stroke="#fff" stroke-width="1"/>`; }
+    if(!compact && s.annotations?.length) s.annotations.forEach(a => { const v = (s.act || [])[a.i]; if(v == null || !isFinite(v)) return; const y0 = Math.max(m.t + 10, y(v) - 12); o += T(X(a.i), y0, a.text, "tc-growth", `text-anchor="middle" style="fill:${col}"`); });
     if(s.fc && act.length){ const base = act[act.length - 1], fp = [[base[0], base[1]]]; s.fc.forEach((v, i) => { if(v != null && isFinite(v)) fp.push([X(nAct + i), y(v)]); });
       if(fp.length > 1){ o += `<path d="${pathOf(fp)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-dasharray="${compact ? "5 4" : "7 5"}" stroke-linecap="round" class="tc-fline" ${glow}/>`;
         if(!compact && sp.fcDots !== false && fp.length <= 16) fp.slice(1).forEach(p => { o += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.8" fill="var(--panel)" stroke="${col}" stroke-width="2"/>`; }); } }
