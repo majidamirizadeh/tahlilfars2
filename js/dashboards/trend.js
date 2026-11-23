@@ -11,7 +11,10 @@ import {slot, paint, paintAll, specs, spark, indexAt, xOf, yearColor} from "./tr
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 const ui = {armed:"without", settlement:"all", pars:[], cities:[], bts:[], a:0, b:null, metrics:["consumption", "income", "collection"], method:"auto", h:null, unit:"brial", vunit:"km3", fcOn:true, bandOn:null,
-  pickOpen:{}, openDrop:null, revMode:"num", revMeasure:"income", yearsOff:[], yMetrics:["consumption"]};
+  pickOpen:{}, openDrop:null, revMode:"num", revMeasure:"income", revDonutYear:null, yearsOff:[], yMetrics:["consumption"]};
+const PRICE_META = {t:"قیمت آب فروش‌رفته", k:"money", c:"#00B8D4"};
+const DISPLAY_METRICS = [...MAIN, "price"];
+const metricMeta = k => k === "price" ? PRICE_META : METRICS[k];
 let docsLazy = null, ctxNow = null, bound = false, resizeObs = null, tipEl = null, drag = null, lastTable = null;
 const sel = k => new Set(ui[k]);
 const toggleIn = (arr, v) => { const i = arr.indexOf(v); i >= 0 ? arr.splice(i, 1) : arr.push(v); };
@@ -19,9 +22,9 @@ function sanitize(model){
   const ok = (arr, list) => arr.filter(id => list.some(x => x.id === id));
   ui.pars = ok(ui.pars, model.pars); ui.cities = ok(ui.cities, model.cities); ui.bts = ok(ui.bts, model.bts);
   const M = model.months.length; if(ui.b == null || ui.b >= M) ui.b = M - 1; if(ui.a > ui.b) ui.a = 0; if(ui.a < 0) ui.a = 0;
-  ui.metrics = MAIN.filter(m => ui.metrics.includes(m)); if(!ui.metrics.length) ui.metrics = ["income"];
+  ui.metrics = DISPLAY_METRICS.filter(m => ui.metrics.includes(m)); if(!ui.metrics.length) ui.metrics = ["income"];
   /* مقایسه سال‌ها فقط یک شاخص فعال دارد؛ انتخاب قدیمی/نامعتبر نیز به یک شاخص نرمال می‌شود. */
-  ui.yMetrics = [MAIN.includes(ui.yMetrics?.[0]) ? ui.yMetrics[0] : "consumption"];
+  ui.yMetrics = [DISPLAY_METRICS.includes(ui.yMetrics?.[0]) ? ui.yMetrics[0] : "consumption"];
   ui.yearsOff = [...new Set((ui.yearsOff || []).map(String))].filter(y => model.months.some(c => String(c).slice(0, 4) === y));
 }
 const SEV = {warn:"⚠", info:"ℹ", crit:"●", good:"✔"};
@@ -35,7 +38,7 @@ function dropBtn(kind, label, panelHtml, active, clearTitle){
 const pill = (name, opts, cur, title) => `<label class="tr-pill"><span>${title}</span><select class="fin-pill" data-tr="${name}">${opts.map(([v, t]) => `<option value="${esc(v)}" ${String(cur) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
 const seg = (name, opts, cur, title) => `<div class="tr-seg" role="group" aria-label="${title}">${opts.map(([v, t, c]) => `<button type="button" class="${String(cur) === String(v) ? "on" : ""}" data-tr-seg="${name}" data-v="${esc(v)}" aria-pressed="${String(cur) === String(v)}">${c ? `<i style="background:${c}"></i>` : ""}${esc(t)}</button>`).join("")}</div>`;
 const tog = (name, label, on) => `<label class="tr-tog"><input type="checkbox" data-tr-tog="${name}" ${on ? "checked" : ""}><span>${label}</span></label>`;
-const AXIS = {money:"L", vol:"R", pct:"P"};
+const AXIS = {money:"L", vol:"R", pct:"P", price:"Q"};
 const sum1 = (arr, a, b) => { let t = 0; for(let i = a; i <= b; i++) t += arr[i] || 0; return t; };
 /* زیرمجموعهٔ هر امور روی همان آرایهٔ فیلترشده فقط یک‌بار ساخته می‌شود. */
 const parSubsetMemo = new WeakMap();
@@ -53,10 +56,10 @@ export function renderTrend({data, onSettings}){
   const model = prepare(data), M = model.months.length; sanitize(model); specs.clear();
   ctxNow = {data, onSettings};
   const un = MONEY_UNITS.find(u => u.id === ui.unit) || MONEY_UNITS[2], vu = VOL_UNITS.find(u => u.id === ui.vunit) || VOL_UNITS[1];
-  const kd = k => METRICS[k].k, scale = (k, v) => kd(k) === "money" ? v/un.d : kd(k) === "vol" ? v/vu.d : v, sc = (k, arr) => arr.map(v => v == null ? null : scale(k, v));
+  const kd = k => k === "price" ? "money" : METRICS[k].k, scale = (k, v) => k === "price" ? v : kd(k) === "money" ? v/un.d : kd(k) === "vol" ? v/vu.d : v, sc = (k, arr) => arr.map(v => v == null ? null : scale(k, v));
   const fmt = (k, v) => { if(v == null || !isFinite(v)) return "—"; const x = scale(k, v), ax = Math.abs(x); return kd(k) === "pct" ? fa(x, 1) : fa(x, ax >= 100 ? 0 : ax >= 10 ? 1 : 2); };
-  const unit = k => kd(k) === "money" ? un.t : kd(k) === "vol" ? vu.t : "٪";
-  const axes = {L:{unit:un.t}, R:{unit:vu.t}, P:{unit:"٪ (درصد وصول)", fmt:v => fa(v, 0) + "٪"}};
+  const unit = k => k === "price" ? "ریال/مترمکعب" : kd(k) === "money" ? un.t : kd(k) === "vol" ? vu.t : "٪";
+  const axes = {L:{unit:un.t}, R:{unit:vu.t}, P:{unit:"٪ (درصد وصول)", fmt:v => fa(v, 0) + "٪"}, Q:{unit:"ریال/مترمکعب", fmt:v => fa(v, 0)}};
   const a = ui.a, b = ui.b, rtl = S("trend.rtl"), anim = S("trend.anim"), pi = periodInfo(model), mets = ui.metrics, bandOn = ui.bandOn == null ? S("trend.band") : ui.bandOn;
   const trainFull = S("trend.trainFull"), origin0 = trainFull ? M - 1 : b, left = monthsLeftInYear(model, origin0);
   const hSet = ui.h == null ? S("trend.horizon") : ui.h, H = hSet === 0 ? (left > 0 ? left : 3) : hSet;
@@ -123,14 +126,29 @@ export function renderTrend({data, onSettings}){
 
   /* ── پیش‌بینی چهار شاخص (آموزش روی کل تاریخچه یا طبق تنظیم) ── */
   const res = {}; for(const m of MAIN) res[m] = forecastMetric(it, m, model, H, fo(ckTop));
-  const origin = res[mets[0]].origin, fcShow = ui.fcOn && origin === b, nAct = b - a + 1;
+  const forecastMets = mets.filter(m => MAIN.includes(m));
+  const origin = res[forecastMets[0] || "consumption"].origin, fcShow = ui.fcOn && forecastMets.length > 0 && origin === b, nAct = b - a + 1;
+  const priceFull = it.water.map((v, i) => it.consumption[i] > 0 ? v / it.consumption[i] : null);
+  const priceAnnotations = full => {
+    const out = [];
+    for(let i = a; i <= b; i++){
+      const v = full[i], prev = i > 0 ? full[i - 1] : null;
+      if(v != null && prev != null && prev > 0 && v > prev){ const d = pctChange(v, prev); if(d != null) out.push({i:i-a, text:`▲${fa(d, 0)}٪`}); }
+      const y = String(model.months[i]).slice(0, 4), isYearEnd = i === M - 1 || String(model.months[i + 1]).slice(0, 4) !== y;
+      if(isYearEnd && v != null){ let py = -1; for(let j = 0; j < M; j++) if(String(model.months[j]).slice(0, 4) === String(+y - 1)) py = j;
+        if(py >= 0 && full[py] > 0){ const d = pctChange(v, full[py]); if(d != null) out.push({i:i-a, text:`سالانه ${d >= 0 ? "▲" : "▼"}${fa(Math.abs(d), 0)}٪`}); }
+      }
+    }
+    return out;
+  };
   const codesAct = model.months.slice(a, b + 1), fcC = Array.from({length:H}, (_, i) => addMonths(model.months[origin], i + 1)), codesAll = [...codesAct, ...(fcShow ? fcC : [])];
   const labels = codesAll.map(c => mName(c)), short = codesAll.map(c => fa(+c.slice(4))), years = codesAll.map(c => c.slice(0, 4)), labelsFull = codesAll.map(c => mName(c, true));
   const yearSet = [...new Set(years)];
   const isPartial = i => pi.partial && a + i === M - 1;
   const mkSeries = (m, ent, r, o = {}) => { const raw = ent.slice(a, b + 1);
-    return {id:o.id || m, name:o.name || METRICS[m].t, color:o.color || METRICS[m].c, axis:AXIS[kd(m)], act:sc(m, raw), fc:fcShow && r ? sc(m, r.fc) : null, lo:fcShow && r ? sc(m, r.lo) : null, hi:fcShow && r ? sc(m, r.hi) : null,
+    return {id:o.id || m, name:o.name || metricMeta(m).t, color:o.color || metricMeta(m).c, axis:AXIS[kd(m)], act:sc(m, raw), fc:fcShow && r ? sc(m, r.fc) : null, lo:fcShow && r ? sc(m, r.lo) : null, hi:fcShow && r ? sc(m, r.hi) : null,
       out:o.out ? outliers(raw).filter(i => !isPartial(i)) : [], raw, ent, rraw:r, m, width:o.width}; };
+  const mkPriceSeries = (ent, o = {}) => { const raw = ent.slice(a, b + 1); return {id:o.id || "price", name:o.name || PRICE_META.t, color:o.color || PRICE_META.c, axis:"Q", act:sc("price", raw), fc:null, lo:null, hi:null, out:[], raw, ent, rraw:null, m:"price", width:o.width, annotations:priceAnnotations(ent)}; };
   const delta = (m, v, prev) => { if(prev == null || !isFinite(prev) || (m !== "ratio" && !prev)) return ""; const d = m === "ratio" ? v - prev : pctChange(v, prev); return d == null ? "" : ` (${d >= 0 ? "▲" : "▼"} ${fa(Math.abs(d), m === "ratio" ? 1 : 0)}${m === "ratio" ? " واحد" : "٪"} نسبت به ماه قبل)`; };
   const tipFor = (list, ttlFn) => i => { const isFc = i >= nAct, j = i - nAct, rows = [];
     list.forEach(s => { const u = unit(s.m);
@@ -168,7 +186,7 @@ export function renderTrend({data, onSettings}){
         const gi = keepIdx[i], v = s.rawFull ? s.rawFull[gi] : s.raw[i];
         const prev = gi > 0 && s.ent ? s.ent[a + gi - 1] : null;
         rows.push([s.name, `${fmt(s.m, v)} ${u}${delta(s.m, v, prev)}${s.out?.includes(gi) ? " — نقطهٔ پرت" : ""}`, s.color]);
-        if(!isR && s.ent) rows.push(["جمع از ابتدای سال", `${fmt(s.m, cumUntil(s.ent, gi))} ${u}`]);
+        if(!isR && s.ent && s.m !== "price") rows.push(["جمع از ابتدای سال", `${fmt(s.m, cumUntil(s.ent, gi))} ${u}`]);
       } else if(s.rraw){
         rows.push([s.name + " (پیش‌بینی)", `${fmt(s.m, s.rraw.fc[j])} ${u}`, s.color]);
         if(bandOn) rows.push(["بازه " + fa(S("trend.confidence")) + "٪", `${fmt(s.m, s.rraw.lo[j])} تا ${fmt(s.m, s.rraw.hi[j])}`]);
@@ -186,15 +204,16 @@ export function renderTrend({data, onSettings}){
 
   /* ── ۱) نمودار ترکیبی شاخص‌های انتخابی (اولین نمودار؛ پیش‌بینی به‌طور پیش‌فرض روشن) ── */
   const combS = mets.map(m => {
-    const s = mkSeries(m, it[m], res[m], {out:mets.length === 1});
+    const s = m === "price" ? mkPriceSeries(priceFull) : mkSeries(m, it[m], res[m], {out:mets.length === 1});
     s.rawFull = s.raw;
     s.act = pack(s.act);
     s.raw = pack(s.raw);
     s.out = (s.out || []).map(gi => keepIdx.indexOf(gi)).filter(x => x >= 0);
+    if(s.annotations) s.annotations = s.annotations.map(x => { const i = keepIdx.indexOf(x.i); return i >= 0 ? {...x, i} : null; }).filter(Boolean);
     return s;
   });
   const combChart = slot("comb", {...baseSpecVis, type:"ts", series:combS, band:bandOn ? "single" : false, height:380, anim, zoom:true, hk:"comb", aria:"روند ترکیبی شاخص‌های انتخابی", tip:tipForVis(combS)});
-  const chips = `<div class="tr-mchips" role="group" aria-label="شاخص‌های نمودار (انتخاب ترکیبی)">${MAIN.map(m => `<button type="button" class="tr-mchip ${mets.includes(m) ? "on" : ""}" style="--c:${METRICS[m].c}" data-tr-m="${m}" data-tr-hl="comb" data-sid="${m}" aria-pressed="${mets.includes(m)}"><i></i>${esc(METRICS[m].t)} <small>${esc(unit(m))}</small></button>`).join("")}</div>`;
+  const chips = `<div class="tr-mchips" role="group" aria-label="شاخص‌های نمودار (انتخاب ترکیبی)">${DISPLAY_METRICS.map(m => `<button type="button" class="tr-mchip ${mets.includes(m) ? "on" : ""}" style="--c:${metricMeta(m).c}" data-tr-m="${m}" data-tr-hl="comb" data-sid="${m}" aria-pressed="${mets.includes(m)}"><i></i>${esc(metricMeta(m).t)} <small>${esc(unit(m))}</small></button>`).join("")}</div>`;
   const dlK = (m, cur, pv) => { if(pv == null || !isFinite(pv) || (m !== "ratio" && !pv)) return ""; const d = m === "ratio" ? cur - pv : pctChange(cur, pv); return d == null ? "" : ` <em class="${d >= 0 ? "up" : "down"}">${d >= 0 ? "▲" : "▼"} ${fa(Math.abs(d), m === "ratio" ? 1 : 0)}${m === "ratio" ? " واحد" : "٪"}</em>`; };
   /* پایان‌سال پیش‌بینی‌شده برای شاخص‌های جمع‌پذیر (سال جاری) */
   const yeMap = {};
@@ -223,26 +242,26 @@ export function renderTrend({data, onSettings}){
     return `<div class="tr-kpi-year"><div class="tr-kpi-year-h" style="border-color:${yearColor(yr.y)}"><i style="background:${yearColor(yr.y)}"></i>سال ${yLabel}</div><div class="tr-kpi-year-g">${cells}</div></div>`;
   }).join("");
   const relCls = {none:"crit", low:"warn", ok:"good"}, relTxt = {ok:"اتکای قابل‌قبول", low:"اتکای محدود", none:"قابل اتکا نیست"};
-  const mlines = `<ul class="tr-mlines">${mets.map(m => { const r = res[m]; return `<li><i style="background:${METRICS[m].c}"></i><b>${esc(METRICS[m].t)}</b> <span class="tr-badge tr-b-${relCls[r.rel.level]}">${relTxt[r.rel.level]}</span> مدل: <b>${esc(METHOD_T[r.method] || r.method)}</b>${r.eval?.chosen?.ok && r.eval.chosen.smape != null ? ` · sMAPE ≈ <b>${fa(r.eval.chosen.smape, 1)}٪</b>` : ""}</li>`; }).join("")}</ul>`;
-  const r0 = res[mets[0]];
-  const trainLine = `<p class="tr-sub">آموزش مدل روی ${fa(r0.trainTo - r0.trainFrom + 1)} ماه (${esc(mName(model.months[r0.trainFrom], true))} تا ${esc(mName(model.months[r0.trainTo], true))})${!fcShow && ui.fcOn ? " · پیش‌بینی فقط وقتی «تا ماه» آخرین ماه داده باشد روی نمودار می‌آید." : ""}</p>`;
+  const mlines = `<ul class="tr-mlines">${forecastMets.map(m => { const r = res[m]; return `<li><i style="background:${METRICS[m].c}"></i><b>${esc(METRICS[m].t)}</b> <span class="tr-badge tr-b-${relCls[r.rel.level]}">${relTxt[r.rel.level]}</span> مدل: <b>${esc(METHOD_T[r.method] || r.method)}</b>${r.eval?.chosen?.ok && r.eval.chosen.smape != null ? ` · sMAPE ≈ <b>${fa(r.eval.chosen.smape, 1)}٪</b>` : ""}</li>`; }).join("")}</ul>`;
+  const r0 = res[forecastMets[0] || "consumption"];
+  const trainLine = forecastMets.length ? `<p class="tr-sub">آموزش مدل روی ${fa(r0.trainTo - r0.trainFrom + 1)} ماه (${esc(mName(model.months[r0.trainFrom], true))} تا ${esc(mName(model.months[r0.trainTo], true))})${!fcShow && ui.fcOn ? " · پیش‌بینی فقط وقتی «تا ماه» آخرین ماه داده باشد روی نمودار می‌آید." : ""}</p>` : `<p class="tr-sub">قیمت آب فروش‌رفته شاخصی مشتق‌شده است؛ برای آن پیش‌بینی انجام نمی‌شود.</p>`;
   const yrLeg = `<div class="tr-yrleg" role="group" aria-label="نمایش/مخفی سال‌ها"><span class="tr-yrleg-l">سال‌ها:</span>${yearSet.map(y => {
     const isCur = y === curYear, off = !isCur && ui.yearsOff.includes(y);
     return `<button type="button" class="tr-yrbtn ${off ? "off" : "on"}" data-tr-year="${esc(y)}" ${isCur ? "disabled title=\"سال جاری همیشه روشن است\"" : `title="${off ? "روشن کردن" : "خاموش کردن"} سال ${fa(y).replace(/٬/g, "")}"`} aria-pressed="${!off}"><i style="background:${yearColor(y)}"></i>${fa(y).replace(/٬/g, "")}${isCur ? " (جاری)" : ""}</button>`;
   }).join("")}<span class="tr-yrleg-hint">— سال جاری همیشه روشن؛ خاموش/روشن روی همه نمودارها اعمال می‌شود</span></div>`;
-  const combHelp = `<p class="tr-hint">برای بزرگ‌نمایی روی نمودار بکشید؛ دوبار کلیک = کل بازه. خط پر = داده واقعی · خط‌چین با نقطهٔ توخالی = پیش‌بینی${bandOn && mets.length === 1 ? ` · ناحیهٔ رنگی = بازهٔ عدم‌قطعیت ${fa(S("trend.confidence"))}٪` : ""}. هر شاخص محور مستقل و هم‌رنگ خودش را دارد: مبلغ ← ${esc(un.t)}، مصرف ← ${esc(vu.t)}، درصد وصول ← ٪.</p>`;
-  const relAll = reliabilitySummary(Object.fromEntries(mets.map(m => [m, res[m]])));
+  const combHelp = `<p class="tr-hint">برای بزرگ‌نمایی روی نمودار بکشید؛ دوبار کلیک = کل بازه. خط پر = داده واقعی · خط‌چین با نقطهٔ توخالی = پیش‌بینی${bandOn && mets.length === 1 && mets[0] !== "price" ? ` · ناحیهٔ رنگی = بازهٔ عدم‌قطعیت ${fa(S("trend.confidence"))}٪` : ""}. هر شاخص محور مستقل و هم‌رنگ خودش را دارد: مبلغ ← ${esc(un.t)}، مصرف ← ${esc(vu.t)}، درصد وصول ← ٪، قیمت آب فروش‌رفته ← ریال/مترمکعب. برچسب‌های ▲ درصد تغییر ماهانه و «سالانه» تغییر پایان سال نسبت به پایان سال قبل‌اند.</p>`;
+  const relAll = forecastMets.length ? reliabilitySummary(Object.fromEntries(forecastMets.map(m => [m, res[m]]))) : {level:"ok", msg:""};
   const relBanner = relAll.level !== "ok" ? `<div class="tr-warn ${relAll.level === "none" ? "tr-warn-crit" : ""}" role="note"><b>${relAll.level === "none" ? "پیش‌بینی‌ها قابل اتکا نیستند." : "اتکای پیش‌بینی‌ها محدود است."}</b> ${esc(relAll.msg)}</div>` : "";
 
   /* ── کارت نمودار کوچک (نمودار جدا برای هر امور/شهر/جزء) ── */
   /* ser می‌تواند تابع باشد: پیش‌بینی و ساخت سری‌ها تا لحظهٔ رسم همان نمودار به تعویق می‌افتد، پس کارت‌های دور از دید اصلاً محاسبه نمی‌شوند. */
   const smCard = (cid, title, sub, ser, {pick, on, h = 215} = {}) => {
     /* همه کارت‌ها دقیقاً همان سال‌های روشن نمودار اصلی را نمایش می‌دهند؛ افق پیش‌بینی حفظ می‌شود. */
-    const build = () => { const visSer = (typeof ser === "function" ? ser() : ser).map(s => ({...s, rawFull:s.raw, act:pack(s.act), raw:pack(s.raw), out:(s.out || []).map(i => keepIdx.indexOf(i)).filter(i => i >= 0)})); return {series:visSer, tip:tipForVis(visSer)}; };
+    const build = () => { const visSer = (typeof ser === "function" ? ser() : ser).map(s => { const x = {...s, rawFull:s.raw, act:pack(s.act), raw:pack(s.raw), out:(s.out || []).map(i => keepIdx.indexOf(i)).filter(i => i >= 0)}; if(x.annotations) x.annotations = x.annotations.map(v => { const i = keepIdx.indexOf(v.i); return i >= 0 ? {...v, i} : null; }).filter(Boolean); return x; }); return {series:visSer, tip:tipForVis(visSer)}; };
     const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, band:false, anim:false, zoom:false, pick:!!pick, aria:title, build});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
-  const entSeries = (g, ck, withForecast = true) => mets.map(m => mkSeries(m, g.it[m], fcShow && withForecast ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
-  const subOf = g => `${esc(METRICS[mets[0]].t)}: <b>${fmt(mets[0], g.it[mets[0]][b])}</b> ${esc(unit(mets[0]))}`;
+  const entSeries = (g, ck, withForecast = true) => mets.map(m => m === "price" ? mkPriceSeries(g.it.water.map((v, i) => g.it.consumption[i] > 0 ? v / g.it.consumption[i] : null)) : mkSeries(m, g.it[m], fcShow && withForecast ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
+  const subOf = g => { const m = mets[0], v = m === "price" ? (g.it.consumption[b] > 0 ? g.it.water[b] / g.it.consumption[b] : null) : g.it[m][b]; return `${esc(metricMeta(m).t)}: <b>${fmt(m, v)}</b> ${esc(unit(m))}`; };
   const nameOf = g => g.name.replace(/^امور\s*/, "");
 
   /* ── ۲) مقایسهٔ امورها: نمودارهای جدا، کنار هم ── */
@@ -269,13 +288,16 @@ export function renderTrend({data, onSettings}){
   if(ui.pickOpen.rev){
     const visibleActualIdx = keepIdx.filter(i => i < nAct);
     const partSer = PARTS.map(k => ({id:k, name:METRICS[k].t, color:METRICS[k].c, raw:visibleActualIdx.map(i => it[k][a + i] || 0)}));
+    const donutYears = [...new Set(model.months.map(c => String(c).slice(0, 4)))];
+    if(!donutYears.includes(String(ui.revDonutYear))) ui.revDonutYear = donutYears[donutYears.length - 1];
+    const donutIdx = model.months.map((c, i) => String(c).slice(0, 4) === String(ui.revDonutYear) ? i : -1).filter(i => i >= 0);
     const visibleLabels = visibleActualIdx.map(i => labels[i]), visibleYears = visibleActualIdx.map(i => years[i]), visibleFullLabels = visibleActualIdx.map(i => labelsFull[i]);
     const monTot = visibleLabels.map((_, i) => partSer.reduce((t, s) => t + Math.max(0, s.raw[i] || 0), 0));
     const pct = ui.revMode === "pct", barSer = partSer.map(s => ({...s, values:s.raw.map((v, i) => pct ? (monTot[i] ? Math.max(0, v)/monTot[i]*100 : 0) : scale("income", v))}));
     const barLab = visibleLabels, barYears = visibleYears;
     const compChart = slot("comp", {type:"bars", stacked:true, labels:barLab, years:barYears, series:barSer, rtl, height:320, anim, unit:pct ? "٪" : un.t, fmtAxis:pct ? v => fa(v, 0) + "٪" : null, aria:"ترکیب ماهانهٔ درآمد",
       tip:i => tipHtml(visibleFullLabels[i], [...partSer.map(s => [s.name, `${fa(scale("income", s.raw[i]), 1)} ${un.t} (${fa(monTot[i] ? s.raw[i]/monTot[i]*100 : 0, 1)}٪)`, s.color]), ["جمع اجزا", `${fa(scale("income", monTot[i]), 1)} ${un.t}`]])});
-    const dTot = partSer.map(s => ({...s, v:s.raw.reduce((x, y) => x + y, 0)})), dSum = dTot.reduce((t, s) => t + Math.max(0, s.v), 0);
+    const dTot = PARTS.map(k => ({id:k, name:METRICS[k].t, color:METRICS[k].c, v:donutIdx.reduce((t, i) => t + (it[k][i] || 0), 0)})), dSum = dTot.reduce((t, s) => t + Math.max(0, s.v), 0);
     const donutChart = slot("donut", {type:"donut", height:270, anim, aria:"سهم اجزای درآمد", items:dTot.map(s => ({id:s.id, value:s.v, color:s.color, tip:`${s.name}: ${fa(scale("income", s.v), 1)} ${un.t} (${fa(dSum ? s.v/dSum*100 : 0, 1)}٪)`})), center:{t1:fa(scale("income", dSum), 0), t2:un.t}});
     const dLeg = `<ul class="tr-dleg">${dTot.map(s => `<li style="--c:${s.color}"><i></i><span>${esc(s.name)}</span><b>${fa(scale("income", s.v), 1)}</b><em>${fa(dSum ? s.v/dSum*100 : 0, 1)}٪</em></li>`).join("")}</ul>`;
     const partCards = PARTS.map(k => smCard("pt-" + k, METRICS[k].t, `<b>${fmt(k, it[k][b])}</b> ${esc(un.t)}`, () => [mkSeries(k, it[k], fcShow ? forecastMetric(it, k, model, H, fo(ckTop)) : null)], {h:190})).join("");
@@ -297,26 +319,26 @@ export function renderTrend({data, onSettings}){
     revBody = `<div class="tr-subh"><h4>سطح انتخابی: <span class="tr-lvl">${esc(lvlText)}</span></h4>${scen ? `<span class="tr-sub">${scenChip}</span>` : ""}</div>
       <section class="tr-sec"><div class="tr-sec-h"><h3>روند اجزای درآمد <small>${esc(un.t)} · نمودار جدا برای هر جزء${scen ? " · پیش‌بینی با سناریوی تعرفه/مالیات" : ""}</small></h3></div><div class="tr-sm">${partCards}</div></section>
       <section class="tr-sec"><div class="tr-card"><div class="tr-subh"><h4>ترکیب ماهانهٔ درآمد</h4>${seg("revMode", [["num", "عددی"], ["pct", "درصدی"]], ui.revMode, "حالت نمایش")}</div>${compChart}</div></section>
-      <section class="tr-sec"><div class="tr-card"><h4>سهم اجزا در درآمد (${esc(mName(model.months[a], true))} تا ${esc(mName(model.months[b], true))})</h4><div class="tr-donut-box">${donutChart}${dLeg}</div></div></section>
+      <section class="tr-sec"><div class="tr-card"><div class="tr-subh"><h4>سهم اجزا در درآمد — سال ${fa(ui.revDonutYear)}</h4>${pill("revDonutYear", donutYears.map(y => [y, fa(y)]), ui.revDonutYear, "سال نمودار دونات")}</div><div class="tr-donut-box">${donutChart}${dLeg}</div></div></section>
       <section class="tr-sec"><div class="tr-card">${table}</div></section>`;
   }
   const revSec = `<details class="tr-revd" data-pk="rev" ${ui.pickOpen.rev ? "open" : ""}><summary>جزئیات درآمد <small>روند اجزا · ستونی عددی/درصدی · دونات · جدول بر اساس سطح (استان/امور/شهر)</small></summary>${revBody}</details>`;
 
   /* ── مقایسه سال‌ها روی هم (فقط یک شاخص؛ محور ماه ۱–۱۲) ── */
-  ui.yMetrics = [MAIN.includes(ui.yMetrics?.[0]) ? ui.yMetrics[0] : (mets[0] || "consumption")];
+  ui.yMetrics = [DISPLAY_METRICS.includes(ui.yMetrics?.[0]) ? ui.yMetrics[0] : (mets[0] || "consumption")];
   const yMets = ui.yMetrics;
   const moLabels = Array.from({length:12}, (_, i) => fa(i + 1));
   const yCmpSeries = [];
   yMets.forEach((m, mi) => {
     activeYears.forEach(y => {
-      const act = Array.from({length:12}, () => null);
+      const act = Array.from({length:12}, () => null), src = m === "price" ? priceFull : it[m];
       for(let i = 0; i < M; i++){
         const code = String(model.months[i]), yy = code.slice(0, 4), mm = +code.slice(4);
-        if(yy === y && mm >= 1 && mm <= 12) act[mm - 1] = scale(m, it[m][i]);
+        if(yy === y && mm >= 1 && mm <= 12) act[mm - 1] = src[i] == null ? null : scale(m, src[i]);
       }
       yCmpSeries.push({
-        id: `yc-${m}-${y}`, name: `${METRICS[m].t} ${fa(y).replace(/٬/g, "")}`,
-        color: yearColor(y), axis: AXIS[kd(m)], act, fc: null, lo: null, hi: null,
+        id: `yc-${m}-${y}`, name: `${metricMeta(m).t} ${fa(y).replace(/٬/g, "")}`,
+        color: yearColor(y), axis: m === "price" ? "Q" : AXIS[kd(m)], act, fc: null, lo: null, hi: null,
         out: [], raw: act, ent: act, rraw: null, m, width: mi === 0 ? 2.8 : 2.2
       });
     });
@@ -330,7 +352,7 @@ export function renderTrend({data, onSettings}){
       return [s.name, v == null || !isFinite(v) ? "—" : `${fa(v, Math.abs(v) >= 100 ? 0 : 1)} ${unit(s.m)}`, s.color];
     }))
   });
-  const yChips = `<div class="tr-mchips" role="group" aria-label="انتخاب شاخص مقایسه سال‌ها">${MAIN.map(m => `<button type="button" class="tr-mchip ${yMets[0] === m ? "on" : ""}" style="--c:${METRICS[m].c}" data-tr-ym="${m}" aria-pressed="${yMets[0] === m}"><i></i>${esc(METRICS[m].t)}</button>`).join("")}</div>`;
+  const yChips = `<div class="tr-mchips" role="group" aria-label="انتخاب شاخص مقایسه سال‌ها">${DISPLAY_METRICS.map(m => `<button type="button" class="tr-mchip ${yMets[0] === m ? "on" : ""}" style="--c:${metricMeta(m).c}" data-tr-ym="${m}" aria-pressed="${yMets[0] === m}"><i></i>${esc(metricMeta(m).t)}</button>`).join("")}</div>`;
   const yearCmpSec = `<section class="tr-sec" id="tr-ycmp-sec"><div class="tr-sec-h"><h3>مقایسه شاخص‌ها در سال‌های مختلف <small>یک شاخص در هر بار · ماه ۱ تا ۱۲</small></h3>
     <p class="tr-sub">هر سال یک خط جدا با رنگ خودش؛ محور افقی ماه‌های سال است. سال‌های خاموش‌شده در دکمه‌های زیر نمودار اصلی اینجا هم اعمال می‌شوند.</p></div>
     <div class="tr-card">${yChips}${yCmpChart}${yrLeg}</div></section>`;
@@ -345,12 +367,12 @@ export function renderTrend({data, onSettings}){
 
   /* ── برداشت‌های توصیفی (فقط از خروجی مدل) ── */
   /* برداشت‌های تفصیلی امور فقط وقتی پنل آن باز است به پیش‌بینی تک‌تک امور نیاز دارد. */
-  const ents = ui.pickOpen.ins ? parGroups.map(g => { const r = forecastMetric(g.it, mets[0], model, H, fo(`P|${scopeKey}|${g.id}`)); return {name:g.name, ref:r.ref, fc1:r.fc[0], fcH:r.fc[r.fc.length - 1], uncert:r.uncert, uncertHigh:r.uncertHigh, level:r.rel.level}; }) : [];
+  const ents = ui.pickOpen.ins ? parGroups.map(g => { const r = forecastMetric(g.it, forecastMets[0] || "consumption", model, H, fo(`P|${scopeKey}|${g.id}`)); return {name:g.name, ref:r.ref, fc1:r.fc[0], fcH:r.fc[r.fc.length - 1], uncert:r.uncert, uncertHigh:r.uncertHigh, level:r.rel.level}; }) : [];
   const ye = {income:yearEnd(it, "income", model, fo(ckTop)), collection:yearEnd(it, "collection", model, fo(ckTop))};
-  const ins = forecastInsights({model, res, H, fmt, unit, ents, entMetric:mets[0], ye, a, b});
+  const ins = forecastInsights({model, res, H, fmt, unit, ents, entMetric:forecastMets[0] || "consumption", ye, a, b});
   const insHtml = `<ul class="tr-ins">${ins.map(x => `<li class="tr-t-${x.tone}"><i>${SEV[x.tone] || "ℹ"}</i><span>${x.html}</span></li>`).join("")}</ul>`;
   const dq = dataQuality(model), dqHtml = dq.length ? `<ul class="tr-dq">${dq.map(x => `<li class="tr-dq-${x.sev}"><i>${SEV[x.sev] || "ℹ"}</i>${esc(x.t)}</li>`).join("")}</ul>` : `<p class="tr-hint">✔ مورد مشکوکی یافت نشد.</p>`;
-  const mDoc = mets[0], rM = res[mDoc];
+  const mDoc = forecastMets[0] || "consumption", rM = res[mDoc];
   /* مستندات فقط هنگام بازشدن ساخته می‌شود و درجا اضافه می‌شود (بدون رندر دوبارهٔ کل تب و تکرار انیمیشن نمودارها). */
   const docsBody = () => `
       <h4>ارزیابی مدل‌ها روی داده فعلی (${esc(METRICS[mDoc].t)})</h4>${evalTableHtml(rM.eval, rM.method, METRICS[mDoc].t, {div:kd(mDoc) === "money" ? un.d : kd(mDoc) === "vol" ? vu.d : 1, unit:unit(mDoc)})}
@@ -487,7 +509,7 @@ function bind(container){
   root.addEventListener("click", e => {
     const t = e.target;
     const yr = t.closest("[data-tr-year]"); if(yr && !yr.disabled){ const y = yr.dataset.trYear; if(ui.yearsOff.includes(y)) ui.yearsOff = ui.yearsOff.filter(x => x !== y); else ui.yearsOff = [...ui.yearsOff, y]; return rerender(); }
-    const ym = t.closest("[data-tr-ym]"); if(ym){ const m = ym.dataset.trYm; if(MAIN.includes(m) && ui.yMetrics[0] !== m){ ui.yMetrics = [m]; return rerender(); } }
+    const ym = t.closest("[data-tr-ym]"); if(ym){ const m = ym.dataset.trYm; if(DISPLAY_METRICS.includes(m) && ui.yMetrics[0] !== m){ ui.yMetrics = [m]; return rerender(); } }
     const mc = t.closest("[data-tr-m]"); if(mc){ const m = mc.dataset.trM; if(ui.metrics.includes(m)){ if(ui.metrics.length > 1) ui.metrics = ui.metrics.filter(x => x !== m); } else ui.metrics = [...ui.metrics, m]; return rerender(); }
     const sg = t.closest("[data-tr-seg]"); if(sg){ const k = sg.dataset.trSeg, v = sg.dataset.v; if(k === "h") ui.h = +v; else if(k === "revMode") ui.revMode = v; return rerender(); }
     const sc = t.closest("[data-tr-scope]"); if(sc){ const k = sc.dataset.trScope; if(k === "armed") ui.armed = nextOf(ARMED_ORDER, ui.armed); else ui.settlement = nextOf(SETTLEMENT_ORDER, ui.settlement); ui.openDrop = null; return rerender(); }
