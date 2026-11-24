@@ -670,13 +670,13 @@ function showApp() {
   registerPWA();
 }
 
-function showLogin() {
+function showLogin({preloadCache = true} = {}) {
   const overlay = document.getElementById("loginOverlay");
   const shell = document.getElementById("appShell");
   if (overlay) overlay.hidden = false;
   if (shell) shell.hidden = true;
-  // Cache در زمان تایپ نام کاربری/رمز آماده می‌شود؛ تا ورود موفق چیزی از آن نمایش داده نمی‌شود.
-  readMainCache();
+  // Cache در زمان تایپ آماده می‌شود؛ در نشست منقضی، ابتدا پاک‌سازی کامل و سپس پیش‌خوانی انجام می‌شود.
+  if(preloadCache) readMainCache();
   loadVendor("lucide","lucide").then(()=>window.lucide&&lucide.createIcons()).catch(()=>null);
   const form = document.getElementById("loginForm");
   const errEl = document.getElementById("loginError");
@@ -723,8 +723,12 @@ if (USE_SECURE_BACKEND) {
   if (isLoggedIn()) {
     showApp();
   } else {
-    if (hasSessionResidue()) endSession("expired", { notify: false });   // نشست محلیِ منقضی: توکن و داده کش‌شده پاک شود
-    showLogin();
+    if (hasSessionResidue()) {
+      // ابتدا Cache متعلق به نشست منقضی پاک شود؛ بعد پیش‌خوانی برای ورود جدید شروع شود.
+      const cleanup = endSession("expired", { notify: false });
+      showLogin({preloadCache: false});
+      cleanup.finally(()=>{ mainCachePromise = null; readMainCache(); });
+    } else showLogin();
   }
 } else {
   showApp();
