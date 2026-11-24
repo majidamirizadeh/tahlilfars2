@@ -677,7 +677,7 @@ function showLogin({preloadCache = true} = {}) {
   if (shell) shell.hidden = true;
   // Cache در زمان تایپ آماده می‌شود؛ در نشست منقضی، ابتدا پاک‌سازی کامل و سپس پیش‌خوانی انجام می‌شود.
   if(preloadCache) readMainCache();
-  loadVendor("lucide","lucide").then(()=>window.lucide&&lucide.createIcons()).catch(()=>null);
+  loadVendor("lucide","lucide").then(()=>window.lucide&&lucide.createIcons({root: overlay || document})).catch(()=>null);
   const form = document.getElementById("loginForm");
   const errEl = document.getElementById("loginError");
   const btn = document.getElementById("loginBtn");
@@ -697,7 +697,7 @@ function showLogin({preloadCache = true} = {}) {
       passToggle.setAttribute("aria-label", show ? "مخفی کردن رمز" : "نمایش رمز");
     };
   }
-  if (window.lucide) lucide.createIcons();
+  // اسکن آیکن‌های فرم ورود پس از بارگذاری، فقط در محدودهٔ overlay انجام می‌شود.
   warmUp();   // Apps Script همین حالا بیدار می‌شود تا ورود کند نباشد
   form.onsubmit = async (ev) => {
     ev.preventDefault();
