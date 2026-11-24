@@ -46,7 +46,14 @@ let state={
   datasetKey:""       // شناسهٔ دادهٔ فعال (hash|version)
 };
 const $=s=>document.querySelector(s);
-const $$=s=>[...document.querySelectorAll(s)];
+const $=s=>[...document.querySelectorAll(s)];
+
+// خواندن Cache از لحظهٔ نمایش فرم ورود آغاز می‌شود؛ رکورد فقط پس از احراز هویت مصرف/نمایش می‌شود.
+let mainCachePromise = null;
+function readMainCache(){
+  if(!mainCachePromise) mainCachePromise = getCachedRecord("main").catch(e=>{ console.warn("cache read failed",e); return null; });
+  return mainCachePromise;
+}
 const MODE_METRICS={
   stats:["customers","consumption","income","collection","debtEnd"],
   percapita:["perConsumption","perIncome","perCollection","perDebt","perConsumptionDay","perIncomeDay","perCollectionDay"],
@@ -483,11 +490,10 @@ async function syncData({user=false}={}){
 /* شروع: اگر Cache معتبر باشد بلافاصله از آن رندر می‌شود (بدون Excel/XLSX)، سپس در پس‌زمینه Manifest چک می‌شود */
 async function boot(){
   const container=$("#viewContainer");
+  // کتابخانهٔ آیکن در پس‌زمینه بارگذاری می‌شود و هرگز نمایش دادهٔ Cache را معطل نمی‌کند.
   const lucideReady=window.lucide?Promise.resolve():loadVendor("lucide","lucide").catch(()=>null);
-  let cached=null;
-  try{ cached=await getCachedRecord("main"); }catch(e){ console.warn("cache read failed",e); }
+  const cached=await readMainCache();
   if(!cached&&container) container.innerHTML=`<section class="card empty loading-state"><div class="loader"></div><h3>در حال بارگذاری داده…</h3><p>فایل <b>${esc(SOURCE_NAME)}</b></p></section>`;
-  await Promise.race([lucideReady,new Promise(r=>setTimeout(r,2500))]);
   if(cached) applyRecord(cached);
   lucideReady.then(()=>window.lucide&&lucide.createIcons());
   await syncData({user:false});
@@ -669,6 +675,9 @@ function showLogin() {
   const shell = document.getElementById("appShell");
   if (overlay) overlay.hidden = false;
   if (shell) shell.hidden = true;
+  // Cache در زمان تایپ نام کاربری/رمز آماده می‌شود؛ تا ورود موفق چیزی از آن نمایش داده نمی‌شود.
+  readMainCache();
+  loadVendor("lucide","lucide").then(()=>window.lucide&&lucide.createIcons()).catch(()=>null);
   const form = document.getElementById("loginForm");
   const errEl = document.getElementById("loginError");
   const btn = document.getElementById("loginBtn");
