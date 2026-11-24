@@ -51,7 +51,7 @@ export const MAIN = ["consumption", "income", "collection", "ratio"];
 export const PARTS = ["water", "sewage", "excess", "hot", "tax", "other"];
 export const MONEY_UNITS = [{id:"rial",t:"ریال",d:1},{id:"mrial",t:"میلیون ریال",d:1e6},{id:"brial",t:"میلیارد ریال",d:1e9},{id:"mtoman",t:"میلیون تومان",d:1e7},{id:"btoman",t:"میلیارد تومان",d:1e10}];
 export const VOL_UNITS = [{id:"m3",t:"متر مکعب",d:1},{id:"km3",t:"هزار متر مکعب",d:1e3},{id:"mm3",t:"میلیون متر مکعب",d:1e6}];
-export const METHOD_T = {auto:"خودکار (کمترین خطای خارج از نمونه)", parts:"ترکیبی از اجزای درآمد", hot:"منطق ماه‌های صدور فصل گرم", zero:"بدون پیش‌بینی؛ صفر در سال جاری", ...Object.fromEntries(METHOD_IDS.map(k => [k, METHODS[k].t]))};
+export const METHOD_T = {auto:"خودکار (کمترین خطای خارج از نمونه)", parts:"ترکیبی از اجزای درآمد", hot:"منطق ماه‌های صدور فصل گرم", zero:"بدون پیش‌بینی؛ صفر در سال مبنا", ...Object.fromEntries(METHOD_IDS.map(k => [k, METHODS[k].t]))};
 
 /* ───────────── تقویم شمسی روی کد ماه (140507) ───────────── */
 export const mName = (code, withYear) => MONTH_NAMES[+String(code).slice(4)-1] + (withYear ? " " + String(code).slice(0,4) : "");
@@ -203,8 +203,8 @@ export function forecastMetric(it, id, model, h, o = {}){
   if(currentYearIsZero){
     const zero = Array.from({length:h}, () => 0);
     const out = {fc:zero, lo:[...zero], hi:[...zero], method:"zero", eval:null, sigma:0, sigmaSrc:"none",
-      rel:{level:"none", msg:"تمام ماه‌های ثبت‌شدهٔ سال جاری برای این شاخص صفر است؛ پیش‌بینی صعودی تولید نشد."},
-      note:"به‌دلیل صفر بودن تمام مقادیر سال جاری، پیش‌بینی روندی انجام نشد.",
+      rel:{level:"none", msg:"تمام ماه‌های ثبت‌شدهٔ سال مبنای پیش‌بینی برای این شاخص صفر است؛ پیش‌بینی صعودی تولید نشد."},
+      note:"به‌دلیل صفر بودن تمام مقادیر سال مبنای پیش‌بینی، پیش‌بینی روندی انجام نشد.",
       n:y.length, nTest:0, origin:tr1 + cut, refIdx:tr1, ref:y[y.length - 1] ?? 0,
       partialCut:!!cut, uncert:0, uncertHigh:false, trainFrom:tr0, trainTo:tr1};
     if(forecastMemo.size > 3000) forecastMemo.clear();
