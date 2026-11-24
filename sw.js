@@ -36,17 +36,6 @@ async function networkFirst(req) {
     return (await c.match(req, {ignoreSearch: true})) || (req.mode === "navigate" ? await c.match(scopeUrl) || await c.match(scopeUrl + "index.html") : undefined) || Response.error();
   }
 }
-/* کتابخانه‌های vendor نسخه‌ثابت دارند و در زمان نصب Precache می‌شوند؛ ابتدا Cache محلی را بخوان. */
-async function vendorCacheFirst(req) {
-  const c = await caches.open(SHELL);
-  const hit = await c.match(req, {ignoreSearch: true});
-  if (hit) return hit;
-  try {
-    const res = await fetch(req);
-    if (res.ok) c.put(req, res.clone());
-    return res;
-  } catch { return Response.error(); }
-}
 /* فونت/تصویر/vendor: Cache-first + به‌روزرسانی در پس‌زمینه */
 async function staleWhileRevalidate(req, name) {
   const c = await caches.open(name), hit = await c.match(req);
@@ -63,6 +52,5 @@ self.addEventListener("fetch", e => {
     return;
   }
   if (!url.href.startsWith(scopeUrl) || isData(url) || url.pathname.endsWith("/sw.js")) return;
-  if (url.pathname.includes("/vendor/")) { e.respondWith(vendorCacheFirst(req)); return; }
   e.respondWith(isShell(url) || req.mode === "navigate" ? networkFirst(req) : staleWhileRevalidate(req, STATIC));
 });
