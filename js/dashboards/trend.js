@@ -261,11 +261,12 @@ export function renderTrend({data, onSettings}){
     const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, band:false, anim:false, zoom:false, pick:!!pick, aria:title, build});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
   const entSeries = (g, ck, withForecast = true) => mets.map(m => m === "price" ? mkPriceSeries(g.it.water.map((v, i) => g.it.consumption[i] > 0 ? v / g.it.consumption[i] : null)) : mkSeries(m, g.it[m], fcShow && withForecast ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
+  /* مرز سال جاری یک بار برای کل رندر تعیین می‌شود؛ زیرعنوان کارت‌ها دیگر هر بار ماه‌ها را عقب‌گرد نمی‌کند. */
+  const currentYear = String(model.months[M - 1]).slice(0, 4);
+  let currentYearStart = M - 1;
+  while(currentYearStart > 0 && String(model.months[currentYearStart - 1]).slice(0, 4) === currentYear) currentYearStart--;
   const subOf = g => {
-    const m = mets[0], currentYear = String(model.months[M - 1]).slice(0, 4);
-    let yStart = M - 1;
-    while(yStart > 0 && String(model.months[yStart - 1]).slice(0, 4) === currentYear) yStart--;
-    const total = k => sum1(g.it[k] || [], yStart, M - 1);
+    const m = mets[0], total = k => sum1(g.it[k] || [], currentYearStart, M - 1);
     const income = total("income"), consumption = total("consumption");
     const v = m === "price" ? (consumption > 0 ? total("water") / consumption : null)
       : m === "ratio" ? (income > 0 ? total("collection") / income * 100 : 0)
@@ -408,7 +409,7 @@ export function renderTrend({data, onSettings}){
 
 function finish(container){
   paintAll(container);
-  if(window.lucide) lucide.createIcons();
+  if(window.lucide) lucide.createIcons({root: container});
   /* تغییر اندازه فقط نمودارهایی را دوباره رسم می‌کند که عرض واقعی‌شان عوض شده است. */
   if(!resizeObs && "ResizeObserver" in window){ let t = 0; resizeObs = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => { const r = document.querySelector(".tr-root"); if(r) paintAll(r, true); }, 120); }); }
   resizeObs?.disconnect(); const r = container.querySelector(".tr-root"); if(r) resizeObs?.observe(r);
