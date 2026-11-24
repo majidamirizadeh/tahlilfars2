@@ -7,7 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="دفتر درآمد"><title>داشبورد مدیریتی دفتر درآمد</title>
 <link rel="stylesheet" href="./css/tokens.css"><link rel="stylesheet" href="./css/base.css"><link rel="stylesheet" href="./css/layout.css"><link rel="stylesheet" href="./css/components.css"><link rel="stylesheet" href="./css/views.css"><link rel="stylesheet" href="./css/trend.css"><link rel="stylesheet" href="./css/print.css">
 <!-- XLSX فقط داخل Web Worker بارگذاری می‌شود (با Cache معتبر اصلاً دانلود نمی‌شود). Chart.js در پروژه استفاده نمی‌شد و حذف شد.
-     Lucide به‌صورت غیرمسدودکننده از vendor محلی بارگذاری می‌شود؛ در صورت نبود، loader مسیر جایگزین دارد. -->
+     Lucide: نسخهٔ محلی vendor/ (defer)؛ اگر نبود app.js خودکار از CDN می‌گیرد. -->
+<script defer src="./vendor/lucide/lucide.min.js"></script>
 </head>
 <body class="map-view">
 <!-- صفحه ورود (قبل از احراز هویت هیچ داشبوردی نمایش داده نمی‌شود) -->
@@ -126,7 +127,7 @@
   <div class="source-note">گزارش با جایگزینی فایل Excel و بارگذاری مجدد، به‌صورت خودکار به‌روزرسانی می‌شود.</div>
 </main>
 
-<nav class="bottom-ribbon" aria-label="ناوبری">
+nav class="bottom-ribbon" aria-label="ناوبری">
   <button class="ribbon-item side" data-view="anomaly" data-group="analysis" title="تحلیل مصرف و مالی"><i data-lucide="radar"></i><span>تحلیل</span></button>
   <button class="ribbon-item home active" data-view="home" data-group="home" title="نقشه، آمار، رتبه‌بندی و هشدارها"><i data-lucide="home"></i><span>دفتر درآمد</span></button>
   <button class="ribbon-item side" data-view="trend" data-group="trend" title="روند، مقایسه و پیش‌بینی"><i data-lucide="trending-up"></i><span>روند</span></button>
