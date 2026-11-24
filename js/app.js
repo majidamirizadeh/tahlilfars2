@@ -46,7 +46,7 @@ let state={
   datasetKey:""       // شناسهٔ دادهٔ فعال (hash|version)
 };
 const $=s=>document.querySelector(s);
-const $=s=>[...document.querySelectorAll(s)];
+const $$=s=>[...document.querySelectorAll(s)];
 
 // خواندن Cache از لحظهٔ نمایش فرم ورود آغاز می‌شود؛ رکورد فقط پس از احراز هویت مصرف/نمایش می‌شود.
 let mainCachePromise = null;
