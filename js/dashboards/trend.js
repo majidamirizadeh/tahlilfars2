@@ -261,7 +261,17 @@ export function renderTrend({data, onSettings}){
     const c = slot(cid, {...baseSpecVis, type:"ts", compact:true, height:h, band:false, anim:false, zoom:false, pick:!!pick, aria:title, build});
     return `<article class="tr-mcard ${on ? "on" : ""}" ${pick ? `data-tr-card="${esc(pick)}" tabindex="0" role="button" aria-pressed="${!!on}" aria-label="${esc(title)} — انتخاب"` : ""}><div class="tr-mch"><b title="${esc(title)}">${esc(title)}</b>${on ? `<span class="tr-sel">انتخاب‌شده</span>` : ""}<small>${sub}</small></div>${c}</article>`; };
   const entSeries = (g, ck, withForecast = true) => mets.map(m => m === "price" ? mkPriceSeries(g.it.water.map((v, i) => g.it.consumption[i] > 0 ? v / g.it.consumption[i] : null)) : mkSeries(m, g.it[m], fcShow && withForecast ? forecastMetric(g.it, m, model, H, fo(ck)) : null));
-  const subOf = g => { const m = mets[0], v = m === "price" ? (g.it.consumption[b] > 0 ? g.it.water[b] / g.it.consumption[b] : null) : g.it[m][b]; return `${esc(metricMeta(m).t)}: <b>${fmt(m, v)}</b> ${esc(unit(m))}`; };
+  const subOf = g => {
+    const m = mets[0], currentYear = String(model.months[M - 1]).slice(0, 4);
+    let yStart = M - 1;
+    while(yStart > 0 && String(model.months[yStart - 1]).slice(0, 4) === currentYear) yStart--;
+    const total = k => sum1(g.it[k] || [], yStart, M - 1);
+    const income = total("income"), consumption = total("consumption");
+    const v = m === "price" ? (consumption > 0 ? total("water") / consumption : null)
+      : m === "ratio" ? (income > 0 ? total("collection") / income * 100 : 0)
+      : total(m);
+    return esc(metricMeta(m).t) + " تا " + esc(mName(model.months[M - 1], true)) + ": <b>" + fmt(m, v) + "</b> " + esc(unit(m));
+  };
   const nameOf = g => g.name.replace(/^امور\s*/, "");
 
   /* ── ۲) مقایسهٔ امورها: نمودارهای جدا، کنار هم ── */
