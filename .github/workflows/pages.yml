@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: node tools/check-no-data.mjs   # هیچ فایل Excel/CSV نباید منتشر شود
-      - run: node tools/fetch-vendor.mjs || echo "vendor fetch failed; CDN fallback will be used"
+      - run: node tools/fetch-vendor.mjs   # شکست دریافت vendor باید Deploy را متوقف کند؛ فایل‌های CDN جایگزین محسوب نشوند
       - run: node tools/build-pwa.mjs   # Precache/BUILD سرویس‌ورکر (بعد از vendor)
       - run: node tools/check-imports.mjs
       - uses: actions/upload-pages-artifact@v3
